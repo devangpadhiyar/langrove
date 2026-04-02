@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "WebFetch(domain:langchain-ai.github.io)",
+      "WebFetch(domain:docs.aegra.dev)",
+      "WebFetch(domain:docs.langchain.com)",
+      "WebFetch(domain:reference.langchain.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "mcp__deepwiki__ask_question",
+      "WebFetch(domain:agentprotocol.ai)",
+      "WebFetch(domain:blog.langchain.com)",
+      "Read(//Users/devangpadhiyar/.pyenv/versions/3.10.18/lib/python3.10/site-packages/langgraph_sdk/**)",
+      "mcp__deepwiki__read_wiki_structure",
+      "mcp__deepwiki__read_wiki_contents",
+      "Bash(python3)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:mcp__deepwiki__read_wiki_contents)",
+      "Bash(uv run:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://pypi.org/pypi/langgraph-host/json)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://pypi.org/pypi/langgraph-engine/json)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://pypi.org/pypi/agentserve/json)",
+      "Bash(find /Users/devangpadhiyar/langgraph-deployment -type f \\\\\\( -name \"*.py\" -o -name \"*.toml\" -o -name \"*.ini\" -o -name \"*.yml\" -o -name \"*.yaml\" -o -name \"*.md\" -o -name \"*.lock\" -o -name \"Dockerfile*\" \\\\\\) ! -path \"./.venv/*\" ! -path \"./.pytest_cache/*\" -exec grep -l \"langrove\" {} \\\\;)"
+    ]
+  }
+}

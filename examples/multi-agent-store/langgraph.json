@@ -1,0 +1,12 @@
+{
+  "graphs": {
+    "researcher": "./researcher.py:graph",
+    "writer": "./writer.py:graph"
+  },
+  "env": ".env",
+  "http": {
+    "cors": {
+      "allow_origins": ["*"]
+    }
+  }
+}

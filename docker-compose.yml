@@ -1,0 +1,59 @@
+services:
+  api:
+    build: .
+    command: langrove serve --host 0.0.0.0 --port 8123
+    ports:
+      - "8123:8123"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://langrove:langrove@postgres:5432/langrove
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - .:/app
+
+  worker:
+    build: .
+    command: langrove worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://langrove:langrove@postgres:5432/langrove
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - .:/app
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: langrove
+      POSTGRES_PASSWORD: langrove
+      POSTGRES_DB: langrove
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langrove"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

@@ -1,0 +1,7 @@
+{
+  "graphs": {
+    "echo": "./tests/fixtures/echo_graph.py:graph"
+  },
+  "dependencies": [],
+  "env": ".env"
+}
