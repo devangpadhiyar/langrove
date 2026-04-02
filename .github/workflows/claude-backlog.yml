@@ -11,6 +11,7 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
+      id-token: write
     services:
       postgres:
         image: postgres:16
