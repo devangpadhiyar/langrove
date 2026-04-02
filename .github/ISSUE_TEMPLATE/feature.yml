@@ -1,0 +1,31 @@
+name: Feature Request
+description: Describe a feature for autonomous implementation
+labels: ["enhancement", "claude"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What should be built?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know it's done?
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Relevant Files
+      description: Which files/modules are involved?
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: Complexity
+      options:
+        - small (single file change)
+        - medium (multiple files, same module)
+        - large (cross-module changes)

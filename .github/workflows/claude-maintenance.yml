@@ -1,0 +1,31 @@
+name: Claude Maintenance
+on:
+  schedule:
+    - cron: "0 6 * * 0" # Weekly on Sunday 6am UTC
+  workflow_dispatch:
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Perform weekly maintenance on Langrove:
+
+            1. Check for outdated dependencies
+            2. Verify all examples in examples/ still work
+            3. Update CLAUDE.md if the project structure has changed
+            4. Review and update README.md for accuracy
+            5. Check for dead code or unused imports
+
+            Open a single PR with all maintenance changes.
+            If nothing needs changing, do nothing.
+          claude_args: "--max-turns 15"

@@ -1,0 +1,64 @@
+name: Claude Backlog Processor
+on:
+  schedule:
+    - cron: "0 */6 * * *" # Every 6 hours
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  process-backlog:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: langrove
+          POSTGRES_PASSWORD: langrove
+          POSTGRES_DB: langrove
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U langrove"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://langrove:langrove@localhost:5432/langrove
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are the Langrove backlog processor.
+
+            TASK: Review open issues and implement the highest-priority one.
+
+            PROCESS:
+            1. Read .claude/journals/implementer.md for past learnings
+            2. List open issues labeled 'claude' that don't have an open PR
+            3. Pick the highest-priority one (bugs > features, small > large)
+            4. Create a branch, implement, test, and open a PR
+            5. Append any new learnings to .claude/journals/implementer.md
+            6. Comment on the issue with your progress
+
+            If no issues are available, check for:
+            - Stale PRs that need rebasing
+            - Failing tests on main that need fixing
+            - Documentation gaps
+
+            Only do ONE task per run. Be focused.
+          claude_args: "--model claude-opus-4-6 --max-turns 30"

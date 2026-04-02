@@ -1,0 +1,68 @@
+name: Claude Implement
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  implement:
+    if: github.event.label.name == 'claude'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: langrove
+          POSTGRES_PASSWORD: langrove
+          POSTGRES_DB: langrove
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U langrove"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://langrove:langrove@localhost:5432/langrove
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are an autonomous execution agent for Langrove.
+
+            TASK: Implement the feature/fix described in this issue.
+
+            PROCESS:
+            1. Read .claude/journals/implementer.md for past learnings
+            2. Read and understand the issue requirements and acceptance criteria
+            3. Read CLAUDE.md to understand project principles and structure
+            4. Create a feature branch: git checkout -b claude/${{ github.event.issue.number }}-<short-description>
+            5. Implement the changes following project conventions
+            6. Write tests for new functionality
+            7. Run: uv run ruff check . && uv run ruff format . && uv run pytest
+            8. Fix any failures
+            9. Append any new learnings to .claude/journals/implementer.md
+            10. Commit with a descriptive message referencing the issue
+            11. Push and create a PR linking to this issue
+
+            CONSTRAINTS:
+            - Follow CLAUDE.md strictly: KISS, YAGNI, SOLID, raw asyncpg, no ORM
+            - One PR per issue, focused changes only
+            - All tests must pass before opening PR
+            - Include "Closes #${{ github.event.issue.number }}" in PR description
+          claude_args: "--model claude-opus-4-6 --max-turns 30"

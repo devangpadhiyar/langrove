@@ -1,0 +1,41 @@
+name: Claude Planner
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Weekly on Monday 8am UTC
+  workflow_dispatch:
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are the Langrove planning agent.
+
+            TASK: Analyze the codebase and create implementation issues.
+
+            PROCESS:
+            1. Read .claude/journals/planner.md for past learnings
+            2. Read README.md to understand the project vision
+            3. Read CLAUDE.md for architecture and conventions
+            4. Scan the codebase for TODO/FIXME/HACK comments
+            5. Compare current features against the README vision
+            6. Check for missing test coverage
+            7. Review open issues to avoid duplicates
+
+            For each gap found, create a GitHub Issue using the feature template with:
+            - Clear description of what needs to be done
+            - Acceptance criteria
+            - Relevant files
+            - Complexity estimate
+            - Label it 'claude' for automatic implementation
+
+            Create at most 3 issues per run. Focus on the most impactful gaps.
+            After finishing, append any new learnings to .claude/journals/planner.md.
+          claude_args: "--model claude-opus-4-6 --max-turns 20"

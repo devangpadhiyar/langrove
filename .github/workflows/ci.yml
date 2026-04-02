@@ -1,0 +1,47 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: langrove
+          POSTGRES_PASSWORD: langrove
+          POSTGRES_DB: langrove
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U langrove"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://langrove:langrove@localhost:5432/langrove
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - run: uv run pytest --tb=short -q

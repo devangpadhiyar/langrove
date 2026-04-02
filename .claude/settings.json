@@ -23,5 +23,44 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://pypi.org/pypi/agentserve/json)",
       "Bash(find /Users/devangpadhiyar/langgraph-deployment -type f \\\\\\( -name \"*.py\" -o -name \"*.toml\" -o -name \"*.ini\" -o -name \"*.yml\" -o -name \"*.yaml\" -o -name \"*.md\" -o -name \"*.lock\" -o -name \"Dockerfile*\" \\\\\\) ! -path \"./.venv/*\" ! -path \"./.pytest_cache/*\" -exec grep -l \"langrove\" {} \\\\;)"
     ]
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git push --force*)",
+            "command": "echo 'Blocked: force push is not allowed' >&2; exit 2"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | xargs uv run ruff format --quiet 2>/dev/null; jq -r '.tool_input.file_path' | xargs uv run ruff check --fix --quiet 2>/dev/null; true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "Check if code was modified in this session. If yes, verify: 1) ruff check passes, 2) ruff format passes, 3) pytest passes. If any fail, return {\"ok\": false, \"reason\": \"description of failures\"}.",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
   }
 }
