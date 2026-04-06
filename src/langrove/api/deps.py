@@ -28,3 +28,8 @@ def get_graph_registry(request: Request) -> GraphRegistry:
 def get_checkpointer(request: Request) -> Any:
     """Get the LangGraph checkpointer from app state."""
     return request.app.state.checkpointer
+
+
+def get_store(request: Request) -> Any:
+    """Get the LangGraph store from app state."""
+    return getattr(request.app.state, "store", None)

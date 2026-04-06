@@ -15,6 +15,8 @@ build/
 .venv/
 venv/
 env/
+**/node_modules/
+.playwright-mcp/
 
 # uv
 .python-version

@@ -4,18 +4,18 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Response
 
 from langrove.api.deps import get_db, get_graph_registry
 from langrove.db.assistant_repo import AssistantRepository
 from langrove.db.pool import DatabasePool
 from langrove.graph.registry import GraphRegistry
 from langrove.models.assistants import (
+    AgentSchemas,
     Assistant,
     AssistantCreate,
     AssistantSearchRequest,
     AssistantUpdate,
-    AgentSchemas,
 )
 from langrove.services.assistant_service import AssistantService
 

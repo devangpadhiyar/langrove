@@ -6,7 +6,6 @@ from typing import Any
 
 import orjson
 
-
 TASK_STREAM = "langrove:tasks"
 
 

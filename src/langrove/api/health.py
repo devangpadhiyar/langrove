@@ -35,7 +35,6 @@ async def health(request: Request):
         checks["redis"] = f"error: {e}"
 
     all_ok = all(v == "ok" for v in checks.values())
-    status_code = 200 if all_ok else 503
     return {"status": "healthy" if all_ok else "unhealthy", "checks": checks}
 
 

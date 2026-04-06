@@ -71,7 +71,7 @@ def init(template: str):
             "def echo(state: State) -> dict:\n"
             '    last = state["messages"][-1]\n'
             '    return {"messages": [{"role": "assistant", "content": last["content"]}]}\n\n\n'
-            'builder = StateGraph(State)\n'
+            "builder = StateGraph(State)\n"
             'builder.add_node("echo", echo)\n'
             'builder.set_entry_point("echo")\n'
             'builder.set_finish_point("echo")\n'

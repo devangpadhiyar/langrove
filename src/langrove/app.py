@@ -17,6 +17,7 @@ from langrove.api.crons import router as crons_router
 from langrove.api.health import router as health_router
 from langrove.api.runs import router as runs_router
 from langrove.api.store import router as store_router
+from langrove.api.store import vfs_router
 from langrove.api.threads import router as threads_router
 from langrove.config import GraphConfig, load_config
 from langrove.db.assistant_repo import AssistantRepository
@@ -41,6 +42,7 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
         load_dotenv(env_path, override=True)
     elif isinstance(config.env, dict):
         import os
+
         os.environ.update(config.env)
 
     @asynccontextmanager
@@ -63,6 +65,10 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
         # Setup checkpointer
         checkpointer = await _setup_checkpointer(settings.database_url)
         app.state.checkpointer = checkpointer
+
+        # Setup LangGraph store (for DeepAgents StoreBackend, etc.)
+        store = await _setup_store(settings.database_url)
+        app.state.store = store
 
         app.state.settings = settings
         app.state.config = config
@@ -133,6 +139,7 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
     app.include_router(threads_router)
     app.include_router(runs_router)
     app.include_router(store_router)
+    app.include_router(vfs_router)
     app.include_router(crons_router)
 
     return app
@@ -141,8 +148,8 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
 async def _setup_checkpointer(database_url: str) -> Any:
     """Setup the LangGraph PostgreSQL checkpointer backed by a connection pool."""
     try:
-        from psycopg_pool import AsyncConnectionPool
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from psycopg_pool import AsyncConnectionPool
 
         pool = AsyncConnectionPool(
             conninfo=database_url,
@@ -158,5 +165,31 @@ async def _setup_checkpointer(database_url: str) -> Any:
         return None
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).warning("Checkpointer setup failed: %s", e)
+        return None
+
+
+async def _setup_store(database_url: str) -> Any:
+    """Setup the LangGraph PostgreSQL store backed by a connection pool."""
+    try:
+        from langgraph.store.postgres import AsyncPostgresStore
+        from psycopg_pool import AsyncConnectionPool
+
+        pool = AsyncConnectionPool(
+            conninfo=database_url,
+            max_size=5,
+            kwargs={"autocommit": True, "prepare_threshold": 0},
+            open=False,
+        )
+        await pool.open()
+        store = AsyncPostgresStore(conn=pool)
+        await store.setup()
+        return store
+    except ImportError:
+        return None
+    except Exception as e:
+        import logging
+
+        logging.getLogger(__name__).warning("Store setup failed: %s", e)
         return None

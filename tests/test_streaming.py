@@ -63,6 +63,7 @@ class TestSSEFormatter:
         assert "event: values\n" in result
         # orjson output should be valid JSON
         import orjson
+
         data_line = result.split("data: ", 1)[1].split("\n")[0]
         parsed = orjson.loads(data_line)
         assert parsed["count"] == 42

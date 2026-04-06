@@ -102,10 +102,7 @@ class StoreRepository:
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-        if max_depth:
-            select = f"DISTINCT namespace[1:{max_depth}]"
-        else:
-            select = "DISTINCT namespace"
+        select = f"DISTINCT namespace[1:{max_depth}]" if max_depth else "DISTINCT namespace"
 
         args.extend([limit, offset])
 

@@ -7,8 +7,8 @@ from typing import Any
 
 import orjson
 
-from langrove.queue.publisher import TASK_STREAM
 from langrove.queue.consumer import CONSUMER_GROUP, DEAD_LETTER_STREAM
+from langrove.queue.publisher import TASK_STREAM
 
 
 class RecoveryMonitor:
@@ -74,8 +74,11 @@ class RecoveryMonitor:
             # Check delivery count via XPENDING
             try:
                 pending_info = await self._redis.xpending_range(
-                    TASK_STREAM, CONSUMER_GROUP,
-                    min=msg_id, max=msg_id, count=1,
+                    TASK_STREAM,
+                    CONSUMER_GROUP,
+                    min=msg_id,
+                    max=msg_id,
+                    count=1,
                 )
 
                 if pending_info and pending_info[0].get("times_delivered", 0) > self._max_attempts:

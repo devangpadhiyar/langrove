@@ -75,46 +75,24 @@ class ThreadService:
 
     async def get_state(self, thread_id: UUID, checkpoint_id: str | None = None) -> ThreadState:
         """Get current thread state from the checkpointer."""
-        # Ensure thread exists
         await self._repo.get(thread_id)
 
-        if not self._checkpointer:
+        graph = self._get_graph_with_checkpointer()
+        if graph is None:
             return ThreadState()
 
         config = {"configurable": {"thread_id": str(thread_id)}}
         if checkpoint_id:
             config["configurable"]["checkpoint_id"] = checkpoint_id
 
-        try:
-            state_snapshot = await self._checkpointer.aget_tuple(config)
-            if state_snapshot is None:
-                return ThreadState()
-
-            return ThreadState(
-                values=state_snapshot.values or {},
-                next=list(state_snapshot.next) if state_snapshot.next else [],
-                checkpoint={"checkpoint_id": state_snapshot.config.get("configurable", {}).get("checkpoint_id", "")},
-                metadata=state_snapshot.metadata or {},
-                tasks=[
-                    {
-                        "id": getattr(t, "id", ""),
-                        "name": getattr(t, "name", ""),
-                    }
-                    for t in (state_snapshot.tasks or [])
-                ],
-            )
-        except Exception:
-            return ThreadState()
+        state_snapshot = await graph.aget_state(config)
+        return self._snapshot_to_thread_state(state_snapshot)
 
     async def update_state(self, thread_id: UUID, req: ThreadStateUpdate) -> ThreadState:
         """Update thread state via the checkpointer (creates new checkpoint)."""
         await self._repo.get(thread_id)
 
-        if not self._checkpointer:
-            return ThreadState(values=req.values)
-
-        # Find the graph for this thread
-        graph = self._find_graph_for_thread(thread_id)
+        graph = self._get_graph_with_checkpointer()
         if graph is None:
             return ThreadState(values=req.values)
 
@@ -122,14 +100,11 @@ class ThreadService:
         if req.checkpoint_id:
             config["configurable"]["checkpoint_id"] = req.checkpoint_id
 
-        try:
-            await graph.aupdate_state(
-                config,
-                req.values,
-                as_node=req.as_node,
-            )
-        except Exception:
-            pass
+        await graph.aupdate_state(
+            config,
+            req.values,
+            as_node=req.as_node,
+        )
 
         return await self.get_state(thread_id)
 
@@ -137,46 +112,78 @@ class ThreadService:
         """Get thread state history from checkpoints."""
         await self._repo.get(thread_id)
 
-        if not self._checkpointer:
+        graph = self._get_graph_with_checkpointer()
+        if graph is None:
             return []
 
         config = {"configurable": {"thread_id": str(thread_id)}}
         if req.checkpoint_id:
             config["configurable"]["checkpoint_id"] = req.checkpoint_id
 
+        before_config = {"configurable": {"checkpoint_id": req.before}} if req.before else None
+
         states = []
-        try:
-            async for state_snapshot in self._checkpointer.alist(config, limit=req.limit, before=req.before):
-                states.append(ThreadState(
-                    values=state_snapshot.values or {},
-                    next=list(state_snapshot.next) if state_snapshot.next else [],
-                    checkpoint={"checkpoint_id": state_snapshot.config.get("configurable", {}).get("checkpoint_id", "")},
-                    metadata=state_snapshot.metadata or {},
-                ))
-        except Exception:
-            pass
+        async for state_snapshot in graph.aget_state_history(
+            config, limit=req.limit, before=before_config
+        ):
+            states.append(self._snapshot_to_thread_state(state_snapshot))
 
         return states
 
     async def _get_checkpoint_state(self, thread_id: UUID) -> dict | None:
         """Get the latest checkpoint values for a thread."""
+        graph = self._get_graph_with_checkpointer()
+        if graph is None:
+            return None
+
         config = {"configurable": {"thread_id": str(thread_id)}}
-        try:
-            state = await self._checkpointer.aget_tuple(config)
-            if state:
-                return {"values": state.values, "interrupts": getattr(state, "interrupts", None)}
-        except Exception:
-            pass
+        state_snapshot = await graph.aget_state(config)
+        if state_snapshot and state_snapshot.values:
+            return {
+                "values": state_snapshot.values,
+                "interrupts": getattr(state_snapshot, "interrupts", None),
+            }
         return None
 
-    def _find_graph_for_thread(self, thread_id: UUID) -> Any:
-        """Find the appropriate graph for a thread. Returns first available graph."""
+    def _get_graph_with_checkpointer(self) -> Any:
+        """Get a graph copy with checkpointer injected. Returns None if unavailable."""
+        if not self._checkpointer:
+            return None
         graphs = self._registry.list_graphs()
-        if graphs:
-            return self._registry.get_graph_for_request(
-                graphs[0].graph_id, self._checkpointer
-            )
-        return None
+        if not graphs:
+            return None
+        return self._registry.get_graph_for_request(graphs[0].graph_id, self._checkpointer)
+
+    @staticmethod
+    def _snapshot_to_thread_state(snapshot: Any) -> ThreadState:
+        """Convert a LangGraph StateSnapshot to our ThreadState model."""
+        if not snapshot or not snapshot.values:
+            return ThreadState()
+        return ThreadState(
+            values=snapshot.values or {},
+            next=list(snapshot.next) if snapshot.next else [],
+            checkpoint={
+                "checkpoint_id": snapshot.config.get("configurable", {}).get("checkpoint_id", "")
+            },
+            metadata=snapshot.metadata or {},
+            tasks=[
+                {
+                    "id": getattr(t, "id", ""),
+                    "name": getattr(t, "name", ""),
+                    "interrupts": [
+                        {
+                            "value": getattr(i, "value", i),
+                            "id": getattr(i, "id", None),
+                            "resumable": getattr(i, "resumable", True),
+                            "ns": getattr(i, "ns", None),
+                            "when": getattr(i, "when", "during"),
+                        }
+                        for i in getattr(t, "interrupts", [])
+                    ],
+                }
+                for t in (snapshot.tasks or [])
+            ],
+        )
 
     @staticmethod
     def _to_thread(row: dict) -> Thread:

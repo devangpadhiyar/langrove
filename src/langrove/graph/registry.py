@@ -13,7 +13,14 @@ from langrove.graph.loader import load_graph
 class GraphInfo:
     """Metadata about a loaded graph."""
 
-    __slots__ = ("graph_id", "graph", "input_schema", "output_schema", "state_schema", "config_schema")
+    __slots__ = (
+        "graph_id",
+        "graph",
+        "input_schema",
+        "output_schema",
+        "state_schema",
+        "config_schema",
+    )
 
     def __init__(self, graph_id: str, graph: Any):
         self.graph_id = graph_id
@@ -80,7 +87,15 @@ class GraphRegistry:
 
         # Deep copy config to prevent concurrent mutation
         if hasattr(base_graph, "config"):
-            update["config"] = copy.deepcopy(base_graph.config)
+            try:
+                update["config"] = copy.deepcopy(base_graph.config)
+            except (TypeError, AttributeError):
+                # Fallback to shallow copy if deepcopy fails (e.g., with LangfuseResourceManager)
+                update["config"] = (
+                    base_graph.config.copy()
+                    if hasattr(base_graph.config, "copy")
+                    else dict(base_graph.config)
+                )
 
         if hasattr(base_graph, "copy"):
             return base_graph.copy(update=update)

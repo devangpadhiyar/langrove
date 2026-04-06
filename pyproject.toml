@@ -7,6 +7,16 @@ authors = [
     { name = "Devang Padhiyar", email = "devangpadhiyar700@gmail.com" }
 ]
 requires-python = ">=3.12"
+license = "MIT"
+keywords = ["langgraph", "langchain", "deployment", "agent", "self-hosted"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Framework :: FastAPI",
+    "Topic :: Software Development :: Libraries",
+]
+
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
@@ -26,6 +36,11 @@ dependencies = [
     "langchain>=1.2.14",
     "psycopg-pool>=3.3.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/devangpadhiyar/langgraph-deployment"
+Repository = "https://github.com/devangpadhiyar/langgraph-deployment"
+Issues = "https://github.com/devangpadhiyar/langgraph-deployment/issues"
 
 [project.optional-dependencies]
 dev = [

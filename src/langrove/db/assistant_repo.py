@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from langrove.db.pool import DatabasePool
-from langrove.exceptions import ConflictError, NotFoundError
+from langrove.exceptions import NotFoundError
 
 
 class AssistantRepository:
@@ -79,8 +79,8 @@ class AssistantRepository:
         if not sets:
             return await self.get(assistant_id)
 
-        sets.append(f"version = version + 1")
-        sets.append(f"updated_at = NOW()")
+        sets.append("version = version + 1")
+        sets.append("updated_at = NOW()")
         args.append(assistant_id)
 
         row = await self._db.fetch_one(
@@ -157,8 +157,12 @@ class AssistantRepository:
             row["assistant_id"],
             row["version"],
             row["graph_id"],
-            orjson.dumps(row.get("config", {})).decode() if isinstance(row.get("config"), dict) else row.get("config", "{}"),
-            orjson.dumps(row.get("metadata", {})).decode() if isinstance(row.get("metadata"), dict) else row.get("metadata_", "{}"),
+            orjson.dumps(row.get("config", {})).decode()
+            if isinstance(row.get("config"), dict)
+            else row.get("config", "{}"),
+            orjson.dumps(row.get("metadata", {})).decode()
+            if isinstance(row.get("metadata"), dict)
+            else row.get("metadata_", "{}"),
         )
 
     @staticmethod

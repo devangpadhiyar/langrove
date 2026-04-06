@@ -94,8 +94,8 @@ class TestGraphRegistry:
         assert "echo" in registry
 
     def test_get_nonexistent_graph(self):
-        from langrove.graph.registry import GraphRegistry
         from langrove.exceptions import NotFoundError
+        from langrove.graph.registry import GraphRegistry
 
         registry = GraphRegistry()
         with pytest.raises(NotFoundError):

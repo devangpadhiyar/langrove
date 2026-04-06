@@ -44,9 +44,7 @@ class CronRepository:
 
     async def get(self, cron_id: UUID) -> dict:
         """Get a cron by ID."""
-        row = await self._db.fetch_one(
-            "SELECT * FROM crons WHERE cron_id = $1", cron_id
-        )
+        row = await self._db.fetch_one("SELECT * FROM crons WHERE cron_id = $1", cron_id)
         if row is None:
             raise NotFoundError("cron", str(cron_id))
         return self._normalize(row)
@@ -86,9 +84,7 @@ class CronRepository:
 
     async def delete(self, cron_id: UUID) -> None:
         """Delete a cron."""
-        result = await self._db.execute(
-            "DELETE FROM crons WHERE cron_id = $1", cron_id
-        )
+        result = await self._db.execute("DELETE FROM crons WHERE cron_id = $1", cron_id)
         if result == "DELETE 0":
             raise NotFoundError("cron", str(cron_id))
 

@@ -5,61 +5,102 @@ Revises:
 Create Date: 2026-04-01
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from alembic import op
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 revision: str = "001"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     # Assistants
     op.create_table(
         "assistants",
-        sa.Column("assistant_id", UUID, primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "assistant_id", UUID, primary_key=True, server_default=sa.text("gen_random_uuid()")
+        ),
         sa.Column("graph_id", sa.Text, nullable=False),
         sa.Column("name", sa.Text, nullable=False, server_default=""),
         sa.Column("description", sa.Text, nullable=True),
         sa.Column("config", JSONB, nullable=False, server_default="{}"),
         sa.Column("metadata_", JSONB, nullable=False, server_default="{}"),
         sa.Column("version", sa.Integer, nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
     )
 
     # Assistant versions
     op.create_table(
         "assistant_versions",
-        sa.Column("assistant_id", UUID, sa.ForeignKey("assistants.assistant_id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "assistant_id",
+            UUID,
+            sa.ForeignKey("assistants.assistant_id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("version", sa.Integer, nullable=False),
         sa.Column("graph_id", sa.Text, nullable=False),
         sa.Column("config", JSONB, nullable=False, server_default="{}"),
         sa.Column("metadata_", JSONB, nullable=False, server_default="{}"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.PrimaryKeyConstraint("assistant_id", "version"),
     )
 
     # Threads
     op.create_table(
         "threads",
-        sa.Column("thread_id", UUID, primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "thread_id", UUID, primary_key=True, server_default=sa.text("gen_random_uuid()")
+        ),
         sa.Column("metadata_", JSONB, nullable=False, server_default="{}"),
         sa.Column("status", sa.Text, nullable=False, server_default="idle"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
-        sa.CheckConstraint("status IN ('idle', 'busy', 'interrupted', 'error')", name="ck_threads_status"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
+        sa.CheckConstraint(
+            "status IN ('idle', 'busy', 'interrupted', 'error')", name="ck_threads_status"
+        ),
     )
 
     # Runs
     op.create_table(
         "runs",
         sa.Column("run_id", UUID, primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("thread_id", UUID, sa.ForeignKey("threads.thread_id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "thread_id",
+            UUID,
+            sa.ForeignKey("threads.thread_id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("assistant_id", UUID, sa.ForeignKey("assistants.assistant_id"), nullable=False),
         sa.Column("status", sa.Text, nullable=False, server_default="pending"),
         sa.Column("input", JSONB, nullable=True),
@@ -68,8 +109,18 @@ def upgrade() -> None:
         sa.Column("multitask_strategy", sa.Text, nullable=False, server_default="reject"),
         sa.Column("result", JSONB, nullable=True),
         sa.Column("error", sa.Text, nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.CheckConstraint(
             "status IN ('pending', 'running', 'error', 'success', 'timeout', 'interrupted')",
             name="ck_runs_status",
@@ -86,8 +137,18 @@ def upgrade() -> None:
         sa.Column("key", sa.Text, nullable=False),
         sa.Column("value", JSONB, nullable=False, server_default="{}"),
         sa.Column("ttl", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.PrimaryKeyConstraint("namespace", "key"),
     )
 
@@ -102,8 +163,18 @@ def upgrade() -> None:
         sa.Column("metadata_", JSONB, nullable=False, server_default="{}"),
         sa.Column("enabled", sa.Boolean, nullable=False, server_default="true"),
         sa.Column("next_run_date", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
     )
 
 

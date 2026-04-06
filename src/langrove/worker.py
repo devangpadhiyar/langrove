@@ -14,7 +14,6 @@ from langrove.db.pool import DatabasePool
 from langrove.db.run_repo import RunRepository
 from langrove.db.thread_repo import ThreadRepository
 from langrove.graph.registry import GraphRegistry
-from langrove.models.common import StreamPart
 from langrove.queue.consumer import TaskConsumer
 from langrove.queue.recovery import RecoveryMonitor
 from langrove.settings import Settings
@@ -36,6 +35,7 @@ async def run_worker(worker_id: str | None = None):
         load_dotenv(env_path, override=True)
     elif isinstance(config.env, dict):
         import os
+
         os.environ.update(config.env)
 
     worker_id = worker_id or f"worker-{uuid.uuid4().hex[:8]}"
@@ -53,11 +53,12 @@ async def run_worker(worker_id: str | None = None):
         config_dir = Path(settings.config_path).parent
         registry.load_from_config(config.graphs, config_dir if config_dir != Path() else None)
 
-    # Setup checkpointer
+    # Setup checkpointer and store
     checkpointer = await _setup_checkpointer(settings.database_url)
+    store = await _setup_store(settings.database_url)
 
     # Create components
-    executor = RunExecutor(registry, checkpointer)
+    executor = RunExecutor(registry, checkpointer, store=store)
     broker = EventBroker(redis_client)
     run_repo = RunRepository(db)
     thread_repo = ThreadRepository(db)
@@ -128,7 +129,9 @@ async def run_worker(worker_id: str | None = None):
     async def on_dead_letter(run_id: str | None) -> None:
         """Handle poison messages."""
         if run_id:
-            await run_repo.update_status(uuid.UUID(run_id), "error", error="Max delivery attempts exceeded")
+            await run_repo.update_status(
+                uuid.UUID(run_id), "error", error="Max delivery attempts exceeded"
+            )
             print(f"Run {run_id} dead-lettered")
 
     print(f"Worker '{worker_id}' ready. Waiting for tasks...")
@@ -150,8 +153,8 @@ async def run_worker(worker_id: str | None = None):
 async def _setup_checkpointer(database_url: str) -> Any:
     """Setup the LangGraph PostgreSQL checkpointer backed by a connection pool."""
     try:
-        from psycopg_pool import AsyncConnectionPool
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+        from psycopg_pool import AsyncConnectionPool
 
         pool = AsyncConnectionPool(
             conninfo=database_url,
@@ -167,5 +170,31 @@ async def _setup_checkpointer(database_url: str) -> Any:
         return None
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).warning("Worker checkpointer setup failed: %s", e)
+        return None
+
+
+async def _setup_store(database_url: str) -> Any:
+    """Setup the LangGraph PostgreSQL store backed by a connection pool."""
+    try:
+        from langgraph.store.postgres import AsyncPostgresStore
+        from psycopg_pool import AsyncConnectionPool
+
+        pool = AsyncConnectionPool(
+            conninfo=database_url,
+            max_size=5,
+            kwargs={"autocommit": True, "prepare_threshold": 0},
+            open=False,
+        )
+        await pool.open()
+        store = AsyncPostgresStore(conn=pool)
+        await store.setup()
+        return store
+    except ImportError:
+        return None
+    except Exception as e:
+        import logging
+
+        logging.getLogger(__name__).warning("Worker store setup failed: %s", e)
         return None

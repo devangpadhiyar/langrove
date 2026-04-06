@@ -57,6 +57,7 @@ class AssistantSearchRequest(BaseModel):
 
 # Agent Protocol models (thin wrappers)
 
+
 class Agent(BaseModel):
     """Agent Protocol agent model."""
 

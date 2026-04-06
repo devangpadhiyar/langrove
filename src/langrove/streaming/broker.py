@@ -7,7 +7,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import orjson
 
@@ -58,7 +59,10 @@ class EventBroker:
             self._local_queues.pop(run_id, None)
 
     async def publish_redis(
-        self, run_id: str, part: StreamPart, event_id: str | None = None,
+        self,
+        run_id: str,
+        part: StreamPart,
+        event_id: str | None = None,
     ) -> None:
         """Publish an event via Redis pub/sub (for background runs)."""
         if self._redis is None:
@@ -100,7 +104,9 @@ class EventBroker:
         await self._redis.xadd(stream_key, {"data": data, "id": event_id})
 
     async def join_stream(
-        self, run_id: str, last_event_id: str | None = None,
+        self,
+        run_id: str,
+        last_event_id: str | None = None,
     ) -> AsyncIterator[str]:
         """Join an ongoing or completed background run's SSE event stream.
 

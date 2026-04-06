@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
-from langrove.auth.base import AuthHandler, AuthUser
+from langrove.auth.base import AuthHandler
 from langrove.exceptions import AuthError
 
 

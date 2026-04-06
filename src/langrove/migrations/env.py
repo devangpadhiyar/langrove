@@ -2,8 +2,9 @@
 
 from logging.config import fileConfig
 
-from dotenv import load_dotenv
 from alembic import context
+from dotenv import load_dotenv
+
 from langrove.settings import Settings
 
 load_dotenv()

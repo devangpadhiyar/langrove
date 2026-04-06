@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import traceback
 from typing import Any
 
 import orjson
 
-logger = logging.getLogger(__name__)
-
 from langrove.queue.publisher import TASK_STREAM
+
+logger = logging.getLogger(__name__)
 
 CONSUMER_GROUP = "langrove:workers"
 DEAD_LETTER_STREAM = "langrove:tasks:dead"
@@ -32,13 +33,8 @@ class TaskConsumer:
 
     async def setup(self) -> None:
         """Ensure the consumer group exists."""
-        try:
-            await self._redis.xgroup_create(
-                TASK_STREAM, CONSUMER_GROUP, id="0", mkstream=True
-            )
-        except Exception:
-            # Group already exists
-            pass
+        with contextlib.suppress(Exception):
+            await self._redis.xgroup_create(TASK_STREAM, CONSUMER_GROUP, id="0", mkstream=True)
 
     async def consume_one(self, block_ms: int = 5000) -> tuple[str, dict] | None:
         """Consume a single task from the stream.
@@ -50,7 +46,8 @@ class TaskConsumer:
         """
         # 1. Check for pending (previously unacked) messages
         pending = await self._redis.xreadgroup(
-            CONSUMER_GROUP, self._worker_id,
+            CONSUMER_GROUP,
+            self._worker_id,
             {TASK_STREAM: "0"},
             count=1,
         )
@@ -60,7 +57,8 @@ class TaskConsumer:
 
         # 2. Read new messages (blocking)
         result = await self._redis.xreadgroup(
-            CONSUMER_GROUP, self._worker_id,
+            CONSUMER_GROUP,
+            self._worker_id,
             {TASK_STREAM: ">"},
             count=1,
             block=block_ms,

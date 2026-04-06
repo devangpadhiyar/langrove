@@ -101,7 +101,7 @@ async def update_thread_state(
 
 
 @router.get("/{thread_id}/history", response_model=list[ThreadState])
-async def get_thread_history(
+async def get_thread_history_get(
     thread_id: UUID,
     limit: int = Query(default=10, ge=1, le=100),
     before: str | None = Query(default=None),
@@ -109,3 +109,12 @@ async def get_thread_history(
 ):
     req = ThreadHistoryRequest(limit=limit, before=before)
     return await service.get_history(thread_id, req)
+
+
+@router.post("/{thread_id}/history", response_model=list[ThreadState])
+async def get_thread_history_post(
+    thread_id: UUID,
+    body: ThreadHistoryRequest = ThreadHistoryRequest(),
+    service: ThreadService = Depends(_get_service),
+):
+    return await service.get_history(thread_id, body)

@@ -47,31 +47,34 @@ class RunRepository:
 
     async def get(self, run_id: UUID) -> dict:
         """Get a run by ID."""
-        row = await self._db.fetch_one(
-            "SELECT * FROM runs WHERE run_id = $1", run_id
-        )
+        row = await self._db.fetch_one("SELECT * FROM runs WHERE run_id = $1", run_id)
         if row is None:
             raise NotFoundError("run", str(run_id))
         return self._normalize(row)
 
-    async def update_status(self, run_id: UUID, status: str, error: str | None = None, result: Any | None = None) -> None:
+    async def update_status(
+        self, run_id: UUID, status: str, error: str | None = None, result: Any | None = None
+    ) -> None:
         """Update run status."""
         if result is not None:
             await self._db.execute(
                 "UPDATE runs SET status = $1, error = $2, result = $3::jsonb, updated_at = NOW() WHERE run_id = $4",
-                status, error, orjson.dumps(result).decode(), run_id,
+                status,
+                error,
+                orjson.dumps(result).decode(),
+                run_id,
             )
         else:
             await self._db.execute(
                 "UPDATE runs SET status = $1, error = $2, updated_at = NOW() WHERE run_id = $3",
-                status, error, run_id,
+                status,
+                error,
+                run_id,
             )
 
     async def delete(self, run_id: UUID) -> None:
         """Delete a run."""
-        result = await self._db.execute(
-            "DELETE FROM runs WHERE run_id = $1", run_id
-        )
+        result = await self._db.execute("DELETE FROM runs WHERE run_id = $1", run_id)
         if result == "DELETE 0":
             raise NotFoundError("run", str(run_id))
 
@@ -119,7 +122,9 @@ class RunRepository:
         )
         return [self._normalize(r) for r in rows]
 
-    async def list_by_thread(self, thread_id: UUID, limit: int = 10, offset: int = 0) -> list[dict]:
+    async def list_by_thread(
+        self, thread_id: UUID, limit: int = 10, offset: int = 0
+    ) -> list[dict]:
         """List runs for a specific thread."""
         return await self.search(thread_id=thread_id, limit=limit, offset=offset)
 

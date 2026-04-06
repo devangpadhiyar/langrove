@@ -29,9 +29,7 @@ class ThreadRepository:
 
         # Check if exists
         if thread_id:
-            existing = await self._db.fetch_one(
-                "SELECT * FROM threads WHERE thread_id = $1", tid
-            )
+            existing = await self._db.fetch_one("SELECT * FROM threads WHERE thread_id = $1", tid)
             if existing:
                 if if_exists == "do_nothing":
                     return self._normalize(existing)
@@ -50,9 +48,7 @@ class ThreadRepository:
 
     async def get(self, thread_id: UUID) -> dict:
         """Get a thread by ID."""
-        row = await self._db.fetch_one(
-            "SELECT * FROM threads WHERE thread_id = $1", thread_id
-        )
+        row = await self._db.fetch_one("SELECT * FROM threads WHERE thread_id = $1", thread_id)
         if row is None:
             raise NotFoundError("thread", str(thread_id))
         return self._normalize(row)
@@ -77,9 +73,7 @@ class ThreadRepository:
 
     async def delete(self, thread_id: UUID) -> None:
         """Delete a thread."""
-        result = await self._db.execute(
-            "DELETE FROM threads WHERE thread_id = $1", thread_id
-        )
+        result = await self._db.execute("DELETE FROM threads WHERE thread_id = $1", thread_id)
         if result == "DELETE 0":
             raise NotFoundError("thread", str(thread_id))
 

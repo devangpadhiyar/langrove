@@ -6,13 +6,17 @@ messages/partial per chunk so the SDK useStream hook gets real-time tokens.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import AsyncIterator
 from contextlib import aclosing
-from typing import Any, AsyncIterator, cast
+from typing import Any, cast
 
 from langchain_core.messages import BaseMessage
 
 from langrove.graph.registry import GraphRegistry
 from langrove.models.common import StreamPart
+
+logger = logging.getLogger(__name__)
 
 
 def _process_stream_event(
@@ -64,9 +68,10 @@ def _process_stream_event(
 class RunExecutor:
     """Executes LangGraph graphs and yields StreamPart events."""
 
-    def __init__(self, registry: GraphRegistry, checkpointer: Any):
+    def __init__(self, registry: GraphRegistry, checkpointer: Any, store: Any = None):
         self._registry = registry
         self._checkpointer = checkpointer
+        self._store = store
 
     async def execute_stream(
         self,
@@ -83,7 +88,9 @@ class RunExecutor:
         checkpoint_id: str | None = None,
     ) -> AsyncIterator[StreamPart]:
         """Execute a graph and yield StreamPart events."""
-        graph = self._registry.get_graph_for_request(graph_id, self._checkpointer)
+        graph = self._registry.get_graph_for_request(
+            graph_id, self._checkpointer, store=self._store
+        )
 
         # Build runnable config
         configurable: dict[str, Any] = {}
@@ -105,6 +112,7 @@ class RunExecutor:
         if command:
             try:
                 from langgraph.types import Command
+
                 input_or_command = Command(**command)
             except (ImportError, Exception):
                 input_or_command = input
@@ -157,6 +165,7 @@ class RunExecutor:
                         yield part
 
         except Exception as e:
+            logger.exception("Error during graph execution for %s", graph_id)
             yield StreamPart("error", {"error": str(e), "message": type(e).__name__})
 
     async def execute_wait(
@@ -172,7 +181,9 @@ class RunExecutor:
         checkpoint_id: str | None = None,
     ) -> dict[str, Any]:
         """Execute a graph and return the final state (blocking)."""
-        graph = self._registry.get_graph_for_request(graph_id, self._checkpointer)
+        graph = self._registry.get_graph_for_request(
+            graph_id, self._checkpointer, store=self._store
+        )
 
         configurable: dict[str, Any] = {}
         if thread_id:
@@ -192,6 +203,7 @@ class RunExecutor:
         if command:
             try:
                 from langgraph.types import Command
+
                 input_or_command = Command(**command)
             except (ImportError, Exception):
                 input_or_command = input

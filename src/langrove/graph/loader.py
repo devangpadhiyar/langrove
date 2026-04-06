@@ -49,8 +49,6 @@ def load_graph(graph_spec: str, base_dir: Path | None = None) -> Any:
 
     graph = getattr(module, attribute, None)
     if graph is None:
-        raise ConfigError(
-            f"Attribute '{attribute}' not found in module '{module_path}'"
-        )
+        raise ConfigError(f"Attribute '{attribute}' not found in module '{module_path}'")
 
     return graph

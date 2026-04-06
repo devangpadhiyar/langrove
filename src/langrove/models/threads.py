@@ -8,8 +8,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from langrove.models.common import Message
-
 
 class Thread(BaseModel):
     """Thread response model."""

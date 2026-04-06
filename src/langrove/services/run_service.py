@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator
+import contextlib
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 from langrove.db.assistant_repo import AssistantRepository
@@ -93,10 +94,8 @@ class RunService:
 
             finally:
                 if ephemeral:
-                    try:
+                    with contextlib.suppress(Exception):
                         await self._threads.delete(actual_thread_id)
-                    except Exception:
-                        pass
 
         return run_id, generate()
 
@@ -151,10 +150,8 @@ class RunService:
 
         finally:
             if ephemeral:
-                try:
+                with contextlib.suppress(Exception):
                     await self._threads.delete(actual_thread_id)
-                except Exception:
-                    pass
 
     async def background_run(
         self,
@@ -225,7 +222,9 @@ class RunService:
         )
         return [Run(**self._to_model(r)) for r in rows]
 
-    async def list_thread_runs(self, thread_id: UUID, limit: int = 10, offset: int = 0) -> list[Run]:
+    async def list_thread_runs(
+        self, thread_id: UUID, limit: int = 10, offset: int = 0
+    ) -> list[Run]:
         """List runs for a thread."""
         rows = await self._runs.list_by_thread(thread_id, limit=limit, offset=offset)
         return [Run(**self._to_model(r)) for r in rows]
@@ -247,6 +246,7 @@ class RunService:
             return results[0]
 
         from langrove.exceptions import NotFoundError
+
         raise NotFoundError("assistant", assistant_id or "default")
 
     @staticmethod

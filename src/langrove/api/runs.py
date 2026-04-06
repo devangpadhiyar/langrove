@@ -7,13 +7,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Request, Response
 from starlette.responses import StreamingResponse
 
-from langrove.api.deps import get_checkpointer, get_db, get_graph_registry, get_redis
+from langrove.api.deps import get_checkpointer, get_db, get_graph_registry, get_redis, get_store
 from langrove.db.assistant_repo import AssistantRepository
 from langrove.db.pool import DatabasePool
 from langrove.db.run_repo import RunRepository
 from langrove.db.thread_repo import ThreadRepository
 from langrove.graph.registry import GraphRegistry
-from langrove.models.common import StreamPart
 from langrove.models.runs import Run, RunCreate, RunSearchRequest, RunWaitResponse
 from langrove.queue.publisher import TaskPublisher
 from langrove.services.run_service import RunService
@@ -28,13 +27,14 @@ def _get_service(
     db: DatabasePool = Depends(get_db),
     registry: GraphRegistry = Depends(get_graph_registry),
     checkpointer=Depends(get_checkpointer),
+    store=Depends(get_store),
     redis=Depends(get_redis),
 ) -> RunService:
     return RunService(
         run_repo=RunRepository(db),
         thread_repo=ThreadRepository(db),
         assistant_repo=AssistantRepository(db),
-        executor=RunExecutor(registry, checkpointer),
+        executor=RunExecutor(registry, checkpointer, store=store),
         publisher=TaskPublisher(redis),
     )
 
@@ -70,12 +70,26 @@ def _sse_response(run_id: str, stream) -> StreamingResponse:
 
 # --- Stateless runs ---
 
+
 @router.post("/runs/stream")
 async def stateless_stream(
     body: RunCreate,
     service: RunService = Depends(_get_service),
+    broker: EventBroker = Depends(_get_broker),
 ):
     """Create an ephemeral thread, stream the run, auto-delete thread."""
+    if body.on_disconnect == "continue":
+        run = await service.background_run(body)
+        run_id = str(run.run_id)
+        return StreamingResponse(
+            broker.join_stream(run_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
     run_id, stream = await service.stream_run(body)
     return _sse_response(run_id, stream)
 
@@ -90,6 +104,7 @@ async def stateless_wait(
 
 
 # --- Background runs ---
+
 
 @router.post("/runs", response_model=Run)
 async def create_background_run(
@@ -136,6 +151,7 @@ async def delete_run(
 
 # --- Join background runs ---
 
+
 @router.get("/runs/{run_id}/stream")
 async def join_run_stream(
     run_id: UUID,
@@ -160,13 +176,27 @@ async def join_run_stream(
 
 # --- Thread-bound runs ---
 
+
 @router.post("/threads/{thread_id}/runs/stream")
 async def thread_stream(
     thread_id: UUID,
     body: RunCreate,
     service: RunService = Depends(_get_service),
+    broker: EventBroker = Depends(_get_broker),
 ):
     """Stream a run on an existing thread."""
+    if body.on_disconnect == "continue":
+        run = await service.background_run(body, thread_id=thread_id)
+        run_id = str(run.run_id)
+        return StreamingResponse(
+            broker.join_stream(run_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
     run_id, stream = await service.stream_run(body, thread_id=thread_id)
     return _sse_response(run_id, stream)
 
