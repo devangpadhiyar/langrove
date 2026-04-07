@@ -53,3 +53,4 @@ globs:
 - Store items have no indices beyond PK — could bottleneck on large stores
 - Pool acquisition: `async with self.pool.acquire() as conn` — single connection per query
 - All `fetch_*` methods return dicts via `dict(row)` conversion from asyncpg.Record
+- 2026-04-07: Checkpointer pool is psycopg (not asyncpg) — uses `%s` placeholders, acquired via `async with checkpointer.conn.connection() as conn`. The `$N` asyncpg convention applies only to the app-level `DatabasePool`, not the checkpointer/store psycopg pools.

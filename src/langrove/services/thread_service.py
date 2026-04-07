@@ -69,9 +69,37 @@ class ThreadService:
         return [self._to_thread(r) for r in rows]
 
     async def copy(self, thread_id: UUID) -> Thread:
-        """Copy a thread."""
+        """Copy a thread including all checkpoint history."""
         row = await self._repo.copy(thread_id)
+        new_thread_id = row["thread_id"]
+        if self._checkpointer:
+            await self._copy_checkpoints(str(thread_id), str(new_thread_id))
         return self._to_thread(row)
+
+    async def _copy_checkpoints(self, source_thread_id: str, dest_thread_id: str) -> None:
+        """Copy all checkpoints, blobs, and writes from one thread to another via direct SQL."""
+        async with self._checkpointer.conn.connection() as conn:
+            await conn.execute(
+                "INSERT INTO checkpoints"
+                " (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, checkpoint, metadata)"
+                " SELECT %s, checkpoint_ns, checkpoint_id, parent_checkpoint_id, checkpoint, metadata"
+                " FROM checkpoints WHERE thread_id = %s ON CONFLICT DO NOTHING",
+                (dest_thread_id, source_thread_id),
+            )
+            await conn.execute(
+                "INSERT INTO checkpoint_blobs"
+                " (thread_id, checkpoint_ns, channel, version, type, blob)"
+                " SELECT %s, checkpoint_ns, channel, version, type, blob"
+                " FROM checkpoint_blobs WHERE thread_id = %s ON CONFLICT DO NOTHING",
+                (dest_thread_id, source_thread_id),
+            )
+            await conn.execute(
+                "INSERT INTO checkpoint_writes"
+                " (thread_id, checkpoint_ns, checkpoint_id, task_id, task_path, idx, channel, type, blob)"
+                " SELECT %s, checkpoint_ns, checkpoint_id, task_id, task_path, idx, channel, type, blob"
+                " FROM checkpoint_writes WHERE thread_id = %s ON CONFLICT DO NOTHING",
+                (dest_thread_id, source_thread_id),
+            )
 
     async def get_state(self, thread_id: UUID, checkpoint_id: str | None = None) -> ThreadState:
         """Get current thread state from the checkpointer."""
