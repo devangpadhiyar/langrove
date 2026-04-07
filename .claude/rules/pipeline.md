@@ -8,7 +8,9 @@ description: Automated pipeline meta-learnings and coordination knowledge
 ```
 New Issue → [triage] → [planned] → [in-progress] → [review] → [done]
                                          ↑               |
-                                         +-- (changes-requested)
+                                         +-- (REQUEST_CHANGES) --+
+
+blocked / human-review-required: applied on top of any state, pause automation
 ```
 
 ## Coordination Rules
