@@ -8,7 +8,7 @@ All examples require:
 - Python 3.12+
 - PostgreSQL and Redis running (use `docker compose up postgres redis -d` from the project root)
 - Database migrations applied (`uv run alembic upgrade head`)
-- An OpenAI API key
+- An OpenAI or Anthropic API key
 
 ## Examples
 
@@ -30,6 +30,14 @@ Deploy multiple graphs with shared memory, scheduled runs, and interrupt/resume 
 
 **Langrove features:** multiple graphs, Store API (put/get/search/namespaces/delete), Cron API (create/update/search/delete), interrupt/resume (`interrupt_before` + `command`), multitask strategies (reject/interrupt/rollback/enqueue), run search
 
+### [helios-video-agent/](helios-video-agent/)
+
+Professional video production agent powered by [DeepAgents](https://github.com/langchain-ai/deepagents) and [Helios](https://github.com/BintzGavin/helios/). The agent acts as a creative director, producing ad-quality motion graphics, cinematic presentations, and animated content from natural language briefs. Includes a React frontend with live `<helios-player>` preview.
+
+**Langrove features:** DeepAgents integration (`create_deep_agent`), VFS via StoreBackend, custom tools, HITL interrupt/resume, skills/memory middleware, Store API (cross-thread VFS), React frontend with SSE streaming
+
+**Additional:** GSAP timelines, CSS @keyframes, Canvas/WebGL, Three.js, audio sync, kinetic typography, cinematic transitions, data-driven templates (inputProps)
+
 ## Running an Example
 
 ```bash
@@ -43,21 +51,26 @@ python client.py               # Run the demo client (in another terminal)
 
 ## Feature Matrix
 
-| Feature | quickstart | custom-auth | multi-agent-store |
-|---------|:----------:|:-----------:|:-----------------:|
-| `langgraph.json` config | x | x | x |
-| CORS configuration | x | x | x |
-| Auto-created assistants | x | | |
-| Schema introspection | x | | |
-| SSE streaming (messages) | x | x | x |
-| SSE streaming (values) | x | | x |
-| Persistent threads | x | | |
-| Thread state API | x | | x |
-| Custom auth handler | | x | |
-| Auth middleware | | x | |
-| Multiple graphs | | | x |
-| Store API | | | x |
-| Cron API | | | x |
-| Interrupt / Resume | | | x |
-| Multitask strategies | | | x |
-| Run search | | | x |
+| Feature | quickstart | custom-auth | multi-agent-store | helios-video-agent |
+|---------|:----------:|:-----------:|:-----------------:|:------------------:|
+| `langgraph.json` config | x | x | x | x |
+| CORS configuration | x | x | x | x |
+| Auto-created assistants | x | | | x |
+| Schema introspection | x | | | |
+| SSE streaming (messages) | x | x | x | x |
+| SSE streaming (values) | x | | x | x |
+| Persistent threads | x | | | x |
+| Thread state API | x | | x | x |
+| Custom auth handler | | x | | |
+| Auth middleware | | x | | |
+| Multiple graphs | | | x | |
+| Store API | | | x | x |
+| Cron API | | | x | |
+| Interrupt / Resume | | | x | x |
+| Multitask strategies | | | x | |
+| Run search | | | x | |
+| DeepAgents integration | | | | x |
+| VFS (StoreBackend) | | | | x |
+| Custom tools | | | | x |
+| Skills / Memory | | | | x |
+| React frontend | | | | x |

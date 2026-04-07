@@ -1,0 +1,37 @@
+[project]
+name = "helios-video-agent"
+version = "0.1.0"
+description = "Professional video production agent using DeepAgents, Helios, and Langrove"
+requires-python = ">=3.12"
+license = "MIT"
+
+dependencies = [
+    "langrove",
+    "deepagents>=0.5.0a2",
+    "langfuse>=3.0",
+]
+
+[tool.uv.sources]
+langrove = { path = "../..", editable = true }
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+    "pytest-asyncio>=1.3.0",
+    "ruff>=0.11",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.ruff]
+line-length = 99
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC"]
+ignore = ["E501", "B008"]

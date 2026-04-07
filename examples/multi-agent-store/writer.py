@@ -27,16 +27,18 @@ model = ChatOpenAI(model="gpt-4o-mini")
 async def write(state: WriterState) -> dict:
     """Write a polished article using the provided research context."""
     context = state.get("research_context", "")
-    response = await model.ainvoke([
-        SystemMessage(
-            content=(
-                "You are a professional writer. Use the following research to "
-                "write a polished, engaging article.\n\n"
-                f"Research:\n{context}"
-            )
-        ),
-        *state["messages"],
-    ])
+    response = await model.ainvoke(
+        [
+            SystemMessage(
+                content=(
+                    "You are a professional writer. Use the following research to "
+                    "write a polished, engaging article.\n\n"
+                    f"Research:\n{context}"
+                )
+            ),
+            *state["messages"],
+        ]
+    )
     return {"messages": [response], "draft": response.content}
 
 

@@ -27,30 +27,34 @@ model = ChatOpenAI(model="gpt-4o-mini")
 
 async def research(state: ResearchState) -> dict:
     """Analyze the topic and produce detailed findings."""
-    topic = state.get("topic", "")
-    response = await model.ainvoke([
-        SystemMessage(
-            content=(
-                "You are a research assistant. Provide thorough, factual findings "
-                "on the given topic. Structure your response with key points."
-            )
-        ),
-        *state["messages"],
-    ])
+    _topic = state.get("topic", "")
+    response = await model.ainvoke(
+        [
+            SystemMessage(
+                content=(
+                    "You are a research assistant. Provide thorough, factual findings "
+                    "on the given topic. Structure your response with key points."
+                )
+            ),
+            *state["messages"],
+        ]
+    )
     return {"messages": [response], "findings": response.content}
 
 
 async def publish(state: ResearchState) -> dict:
     """Format findings for publication."""
-    response = await model.ainvoke([
-        SystemMessage(
-            content=(
-                "You are an editor. Take the research findings and produce a "
-                "concise, well-structured summary suitable for sharing."
-            )
-        ),
-        *state["messages"],
-    ])
+    response = await model.ainvoke(
+        [
+            SystemMessage(
+                content=(
+                    "You are an editor. Take the research findings and produce a "
+                    "concise, well-structured summary suitable for sharing."
+                )
+            ),
+            *state["messages"],
+        ]
+    )
     return {"messages": [response], "findings": response.content}
 
 

@@ -19,10 +19,12 @@ model = ChatOpenAI(model="gpt-4o-mini")
 
 
 async def chatbot(state: State) -> dict:
-    response = await model.ainvoke([
-        SystemMessage(content="You are a helpful assistant."),
-        *state["messages"],
-    ])
+    response = await model.ainvoke(
+        [
+            SystemMessage(content="You are a helpful assistant."),
+            *state["messages"],
+        ]
+    )
     return {"messages": [response]}
 
 

@@ -60,7 +60,7 @@ async def main():
 
     # Check thread state -- should be interrupted before "publish"
     state = await client.threads.get_state(tid)
-    print(f"  Thread status: interrupted")
+    print("  Thread status: interrupted")
     print(f"  Next node: {state.get('next', [])}")
 
     # Resume execution (approve the publish)
@@ -153,9 +153,7 @@ async def main():
     print("\n=== Cron API ===")
 
     # Create a cron: run researcher every 6 hours
-    researcher_assistant = next(
-        a for a in assistants if a["graph_id"] == "researcher"
-    )
+    researcher_assistant = next(a for a in assistants if a["graph_id"] == "researcher")
     cron = await client.crons.create(
         assistant_id=str(researcher_assistant["assistant_id"]),
         schedule="0 */6 * * *",
@@ -203,7 +201,7 @@ async def main():
     print("  Available strategies: reject (default), interrupt, rollback, enqueue")
 
     # Example: enqueue strategy
-    async for event in client.runs.stream(
+    async for _event in client.runs.stream(
         mt_thread["thread_id"],
         "researcher",
         input={
