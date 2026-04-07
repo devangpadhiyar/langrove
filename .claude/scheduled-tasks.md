@@ -54,15 +54,16 @@ You are the Langrove autonomous development pipeline. Run the following steps:
    - Change labels: remove 'planned', add 'in-progress'
    - Read relevant .claude/rules/ files
    - Read the Implementation Plan comment posted in step 3
-   - Create branch: claude/{issue-number}-{short-slug}
+   - NEVER push directly to main. Create a new branch off main:
+     git checkout main && git pull && git checkout -b claude/{issue-number}-{short-slug}
    - Implement changes following the plan exactly
    - Write tests for all new/changed functionality
    - Run: uv run ruff check . && uv run ruff format . && uv run pytest
    - Fix any failures (up to 3 retry cycles)
    - If diff exceeds 500 lines: label 'blocked' + 'human-review-required', stop
    - Append any new learnings to the most relevant .claude/rules/ file
-   - Commit all changes (including rules/ updates)
-   - Push branch and open PR with "Closes #{issue-number}" in the description
+   - Commit all changes (including rules/ updates) on the feature branch
+   - Push the branch and open a PR targeting main with "Closes #{issue-number}" in the description
    - Change labels: remove 'in-progress', add 'review'
 
 5. REVIEW (Reviewer role):
@@ -109,7 +110,8 @@ Perform weekly maintenance on the Langrove project:
    For stale ones: gh pr close {number} --comment "Closing stale automated PR. Issue reset to triage." --repo devangpadhiyar/langrove
    Reset the linked issue label back to 'triage'.
 
-5. Commit and push any changes.
+5. For any file changes: create a branch `claude/maintenance-{date}` off main, commit, push,
+   and open a PR targeting main. Never push directly to main.
 
 Use gh CLI with --repo devangpadhiyar/langrove for all GitHub operations.
 ```
@@ -148,7 +150,9 @@ Analyze the Langrove codebase and create GitHub issues for gaps found:
    Use complexity:medium or complexity:large if appropriate.
    Only create issues for clear, actionable, well-scoped tasks.
 
-5. Append any new learnings to .claude/rules/pipeline.md, commit and push.
+5. For any file changes (including rules/pipeline.md updates): create a branch
+   `claude/issue-creator-{date}` off main, commit, push, and open a PR targeting main.
+   Never push directly to main.
 
 Use gh CLI with --repo devangpadhiyar/langrove for all GitHub operations.
 ```

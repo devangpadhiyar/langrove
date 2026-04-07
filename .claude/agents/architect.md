@@ -55,3 +55,4 @@ Only proceed with `planned` label for small/medium issues.
 - Append new learnings to the most relevant `.claude/rules/` file:
   - Date prefix: `- YYYY-MM-DD: <concise learning>`
   - Only add genuinely new insights, not duplicates of existing entries
+- **Do NOT commit or push** — you only read files and post issue comments
