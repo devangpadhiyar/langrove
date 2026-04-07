@@ -1,6 +1,6 @@
 name: Feature Request
 description: Describe a feature for autonomous implementation
-labels: ["enhancement", "claude"]
+labels: ["enhancement", "claude", "triage"]
 body:
   - type: textarea
     id: description

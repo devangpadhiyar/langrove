@@ -1,6 +1,6 @@
 name: Bug Report
 description: Report a bug for autonomous fixing
-labels: ["bug", "claude"]
+labels: ["bug", "claude", "triage"]
 body:
   - type: textarea
     id: description

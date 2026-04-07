@@ -1,8 +1,7 @@
 # Implementer Agent Journal
 
-Critical learnings and insights from past implementation sessions.
-Updated by the execution agent after each completed task.
-
-## Learnings
-
-<!-- Agents append entries below this line -->
+> **Migrated to `.claude/rules/`** — Agent learnings are now stored by topic
+> (database.md, streaming.md, etc.) instead of by role. See `.claude/rules/` for all knowledge.
+>
+> This file is kept for backwards compatibility. New learnings go into the
+> most relevant `.claude/rules/` file.

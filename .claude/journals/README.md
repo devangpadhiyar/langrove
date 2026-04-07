@@ -1,26 +1,30 @@
 # Agent Journals
 
-This directory contains learnings accumulated by autonomous agents across sessions.
-Inspired by the Helios project's `.jules/` journal system.
+This directory previously contained per-role journal files (planner.md, implementer.md, reviewer.md).
 
-## How it works
+## Migration to `.claude/rules/`
 
-- Each agent role has its own journal file
-- Agents read their journal at the start of every session for past learnings
-- Agents append new insights after completing work
-- Journals are committed to git alongside implementation changes
-- Over time, journals accumulate project-specific knowledge that makes agents more effective
+Agent learnings are now stored in **topic-based `.claude/rules/` files** instead of per-role journals.
+This follows the industry-standard pattern (Lore Protocol, Letta Context Repositories, Cline Memory Bank)
+and uses Claude Code's native path-scoped rules for automatic context loading.
 
-## Journal files
+### How it works now
 
-- `planner.md` — Planning agent learnings (codebase analysis, issue creation patterns)
-- `implementer.md` — Execution agent learnings (implementation patterns, common pitfalls)
-- `reviewer.md` — Review agent learnings (recurring issues, security patterns)
+- Knowledge organized by domain: `database.md`, `streaming.md`, `auth.md`, etc.
+- Files have `globs:` frontmatter — Claude auto-loads relevant rules when editing matching files
+- All agents share all knowledge (no role silos)
+- Agents append new learnings to the most relevant rules/ file after completing work
+- Weekly maintenance consolidates and deduplicates entries
 
-## Guidelines for agents
+### Rules files
 
-When appending to a journal, include:
-- Date of the session
-- What was learned (mistakes to avoid, patterns that worked, architectural decisions)
-- Keep entries concise — one or two sentences per learning
-- Do NOT duplicate existing entries
+| File | Scope |
+|------|-------|
+| `rules/database.md` | asyncpg, JSONB, pools, migrations |
+| `rules/streaming.md` | SSE format, pub/sub, event replay |
+| `rules/worker-tasks.md` | Redis Streams, consumer groups, recovery |
+| `rules/auth.md` | middleware, authorization, AuthUser |
+| `rules/api-design.md` | FastAPI patterns, services, error handling |
+| `rules/testing.md` | pytest conventions, fixtures, CI |
+| `rules/architecture.md` | system design, graph loading, lifecycle |
+| `rules/pipeline.md` | automation meta-learnings |
