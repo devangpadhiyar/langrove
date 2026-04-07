@@ -18,7 +18,7 @@ class TestNoopAuth:
         user = await handler.authenticate({})
         assert isinstance(user, AuthUser)
         assert user.identity == "anonymous"
-        assert user.role == "admin"
+        assert "authenticated" in user.permissions
 
 
 class TestCustomAuth:
@@ -54,7 +54,7 @@ class TestCustomAuth:
         user = await auth.authenticate({"authorization": "Bearer valid"})
         assert user is not None
         assert user.identity == "user-1"
-        assert user.role == "admin"
+        assert user.metadata["role"] == "admin"
 
         # Invalid token
         user = await auth.authenticate({"authorization": "Bearer invalid"})

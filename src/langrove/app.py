@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI, Request
@@ -48,7 +47,11 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Startup
-        db_pool = DatabasePool(settings.database_url)
+        db_pool = DatabasePool(
+            settings.database_url,
+            min_size=settings.db_pool_min_size,
+            max_size=settings.db_pool_max_size,
+        )
         await db_pool.connect()
         app.state.db_pool = db_pool
 
@@ -63,12 +66,20 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
         app.state.graph_registry = registry
 
         # Setup checkpointer
-        checkpointer = await _setup_checkpointer(settings.database_url)
+        from langrove.db.langgraph_pools import setup_checkpointer, setup_store
+
+        checkpointer, cp_pool = await setup_checkpointer(
+            settings.database_url, pool_max_size=settings.checkpointer_pool_max_size
+        )
         app.state.checkpointer = checkpointer
+        app.state.checkpointer_pool = cp_pool
 
         # Setup LangGraph store (for DeepAgents StoreBackend, etc.)
-        store = await _setup_store(settings.database_url)
+        store, store_pool = await setup_store(
+            settings.database_url, pool_max_size=settings.store_pool_max_size
+        )
         app.state.store = store
+        app.state.store_pool = store_pool
 
         app.state.settings = settings
         app.state.config = config
@@ -80,6 +91,10 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
         yield
 
         # Shutdown
+        if cp_pool:
+            await cp_pool.close()
+        if store_pool:
+            await store_pool.close()
         await db_pool.disconnect()
         await redis_client.aclose()
 
@@ -124,6 +139,15 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
             content={"code": "internal_error", "message": str(exc)},
         )
 
+    from langrove.exceptions import ForbiddenError
+
+    @app.exception_handler(ForbiddenError)
+    async def forbidden_handler(request: Request, exc: ForbiddenError):
+        return JSONResponse(
+            status_code=403,
+            content={"code": "forbidden", "message": str(exc)},
+        )
+
     # Auth middleware (if configured)
     if config.auth.path:
         from langrove.auth.custom import CustomAuthHandler
@@ -133,6 +157,8 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
         app.add_middleware(AuthMiddleware, handler=auth_handler)
 
     # Register routers
+    from langrove.api.dead_letter import router as dead_letter_router
+
     app.include_router(health_router, tags=["health"])
     app.include_router(assistants_router)
     app.include_router(agents_router)
@@ -141,55 +167,6 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
     app.include_router(store_router)
     app.include_router(vfs_router)
     app.include_router(crons_router)
+    app.include_router(dead_letter_router)
 
     return app
-
-
-async def _setup_checkpointer(database_url: str) -> Any:
-    """Setup the LangGraph PostgreSQL checkpointer backed by a connection pool."""
-    try:
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-        from psycopg_pool import AsyncConnectionPool
-
-        pool = AsyncConnectionPool(
-            conninfo=database_url,
-            max_size=5,
-            kwargs={"autocommit": True, "prepare_threshold": 0},
-            open=False,
-        )
-        await pool.open()
-        checkpointer = AsyncPostgresSaver(conn=pool)
-        await checkpointer.setup()
-        return checkpointer
-    except ImportError:
-        return None
-    except Exception as e:
-        import logging
-
-        logging.getLogger(__name__).warning("Checkpointer setup failed: %s", e)
-        return None
-
-
-async def _setup_store(database_url: str) -> Any:
-    """Setup the LangGraph PostgreSQL store backed by a connection pool."""
-    try:
-        from langgraph.store.postgres import AsyncPostgresStore
-        from psycopg_pool import AsyncConnectionPool
-
-        pool = AsyncConnectionPool(
-            conninfo=database_url,
-            max_size=5,
-            kwargs={"autocommit": True, "prepare_threshold": 0},
-            open=False,
-        )
-        await pool.open()
-        store = AsyncPostgresStore(conn=pool)
-        await store.setup()
-        return store
-    except ImportError:
-        return None
-    except Exception as e:
-        import logging
-
-        logging.getLogger(__name__).warning("Store setup failed: %s", e)
-        return None

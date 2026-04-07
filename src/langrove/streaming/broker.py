@@ -32,9 +32,10 @@ class EventBroker:
     For background runs: uses Redis pub/sub.
     """
 
-    def __init__(self, redis: Any | None = None):
+    def __init__(self, redis: Any | None = None, *, event_stream_ttl_seconds: int = 0):
         self._redis = redis
         self._local_queues: dict[str, list[asyncio.Queue]] = {}
+        self._event_stream_ttl = event_stream_ttl_seconds
 
     def subscribe_local(self, run_id: str) -> asyncio.Queue:
         """Subscribe to events for a foreground run (same process)."""
@@ -102,6 +103,8 @@ class EventBroker:
         stream_key = f"langrove:runs:{run_id}:events"
         data = orjson.dumps({"event": part.event, "data": part.data}, default=_default).decode()
         await self._redis.xadd(stream_key, {"data": data, "id": event_id})
+        if self._event_stream_ttl > 0:
+            await self._redis.expire(stream_key, self._event_stream_ttl)
 
     async def join_stream(
         self,
@@ -129,7 +132,8 @@ class EventBroker:
         try:
             # Step 2: Replay stored events from Redis Stream
             entries = await self._redis.xrange(stream_key, min="-", max="+")
-            past_last = last_event_id is None
+            # "-1" is the SDK's sentinel meaning "replay from the beginning"
+            past_last = last_event_id is None or last_event_id == "-1"
             run_finished = False
 
             for _, fields in entries:

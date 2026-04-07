@@ -22,9 +22,16 @@ class ConflictError(LangroveError):
 
 
 class AuthError(LangroveError):
-    """Authentication or authorization failure."""
+    """Authentication failure (401)."""
 
     def __init__(self, message: str = "Unauthorized"):
+        super().__init__(message)
+
+
+class ForbiddenError(LangroveError):
+    """Authorization failure (403)."""
+
+    def __init__(self, message: str = "Forbidden"):
         super().__init__(message)
 
 

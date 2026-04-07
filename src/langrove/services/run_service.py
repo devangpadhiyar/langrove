@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import AsyncIterator
+from typing import Any
 from uuid import UUID
 
 from langrove.db.assistant_repo import AssistantRepository
@@ -25,17 +26,20 @@ class RunService:
         assistant_repo: AssistantRepository,
         executor: RunExecutor,
         publisher: TaskPublisher | None = None,
+        redis: Any | None = None,
     ):
         self._runs = run_repo
         self._threads = thread_repo
         self._assistants = assistant_repo
         self._executor = executor
         self._publisher = publisher
+        self._redis = redis
 
     async def stream_run(
         self,
         req: RunCreate,
         thread_id: UUID | None = None,
+        auth_user: dict | None = None,
     ) -> tuple[str, AsyncIterator[StreamPart]]:
         """Execute a foreground streaming run.
 
@@ -81,6 +85,7 @@ class RunService:
                     interrupt_before=req.interrupt_before,
                     interrupt_after=req.interrupt_after,
                     checkpoint_id=req.checkpoint_id,
+                    auth_user=auth_user,
                 ):
                     yield part
 
@@ -103,6 +108,7 @@ class RunService:
         self,
         req: RunCreate,
         thread_id: UUID | None = None,
+        auth_user: dict | None = None,
     ) -> RunWaitResponse:
         """Execute a blocking run and return the final state."""
         assistant = await self._resolve_assistant(req.assistant_id)
@@ -135,6 +141,7 @@ class RunService:
                 interrupt_before=req.interrupt_before,
                 interrupt_after=req.interrupt_after,
                 checkpoint_id=req.checkpoint_id,
+                auth_user=auth_user,
             )
 
             await self._runs.update_status(run["run_id"], "success", result=result)
@@ -157,6 +164,7 @@ class RunService:
         self,
         req: RunCreate,
         thread_id: UUID | None = None,
+        auth_user: dict | None = None,
     ) -> Run:
         """Create a background run and dispatch it to the Redis Streams worker."""
         assistant = await self._resolve_assistant(req.assistant_id)
@@ -193,6 +201,7 @@ class RunService:
                 interrupt_after=req.interrupt_after,
                 checkpoint_id=req.checkpoint_id,
                 metadata=req.metadata,
+                auth_user=auth_user,
             )
 
         return Run(**self._to_model(run))
@@ -203,8 +212,17 @@ class RunService:
         return Run(**self._to_model(row))
 
     async def cancel_run(self, run_id: UUID) -> None:
-        """Cancel a run."""
+        """Cancel a run: update DB, signal worker via Redis key, reset thread."""
+        row = await self._runs.get(run_id)
+        # 1. DB write first — authoritative state before the worker can check
         await self._runs.update_status(run_id, "interrupted")
+        # 2. Set cancel key — worker polls this between events
+        if self._redis is not None:
+            await self._redis.set(f"langrove:runs:{run_id}:cancel", "1", ex=3600)
+        # 3. Reset thread immediately — caller expects idle after 204
+        thread_id = row.get("thread_id")
+        if thread_id:
+            await self._threads.set_status(thread_id, "idle")
 
     async def delete_run(self, run_id: UUID) -> None:
         """Delete a run."""

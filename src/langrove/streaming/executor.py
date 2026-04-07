@@ -11,8 +11,6 @@ from collections.abc import AsyncIterator
 from contextlib import aclosing
 from typing import Any, cast
 
-from langchain_core.messages import BaseMessage
-
 from langrove.graph.registry import GraphRegistry
 from langrove.models.common import StreamPart
 
@@ -37,8 +35,11 @@ def _process_stream_event(
     results: list[StreamPart] = []
 
     if mode == "messages":
-        # chunk is (BaseMessageChunk, metadata_dict) from LangGraph astream
-        msg, meta = cast("tuple[BaseMessage | dict, dict[str, Any]]", chunk)
+        # chunk is (BaseMessageChunk, metadata_dict) from LangGraph astream(messages mode)
+        # It must be a 2-tuple; if not, skip (malformed chunk)
+        if not isinstance(chunk, (tuple, list)) or len(chunk) != 2:
+            return results
+        msg, meta = chunk
 
         # Serialize to dict — SDK accumulates chunks itself
         msg_dict = msg.model_dump() if hasattr(msg, "model_dump") else msg
@@ -86,6 +87,7 @@ class RunExecutor:
         interrupt_before: list[str] | None = None,
         interrupt_after: list[str] | None = None,
         checkpoint_id: str | None = None,
+        auth_user: dict[str, Any] | None = None,
     ) -> AsyncIterator[StreamPart]:
         """Execute a graph and yield StreamPart events."""
         graph = self._registry.get_graph_for_request(
@@ -100,6 +102,8 @@ class RunExecutor:
             configurable["checkpoint_id"] = checkpoint_id
         if config and "configurable" in config:
             configurable.update(config["configurable"])
+        if auth_user is not None:
+            configurable["langgraph_auth_user"] = auth_user
 
         runnable_config: dict[str, Any] = {"configurable": configurable}
         if config:
@@ -129,8 +133,7 @@ class RunExecutor:
         only_interrupt_updates = not updates_explicit
 
         # Convert messages-tuple -> messages for Python graphs (SDK adds it automatically)
-        has_messages = "messages" in modes or "messages-tuple" in modes
-        if has_messages:
+        if "messages" in modes or "messages-tuple" in modes:
             modes_set.add("messages")
 
         # Strip SDK-internal modes from the user-requested list used for pass-through checks
@@ -148,9 +151,30 @@ class RunExecutor:
                 )
             ) as stream:
                 async for event in stream:
-                    # Multi-mode astream yields (mode, chunk) tuples
-                    if isinstance(event, tuple) and len(event) == 2:
-                        mode, chunk = cast("tuple[str, Any]", event)
+                    # LangGraph astream yields:
+                    #   single-mode, no subgraphs: chunk
+                    #   multi-mode, no subgraphs: (mode, chunk)
+                    #   single-mode, subgraphs=True: (namespace_tuple, chunk)
+                    #   multi-mode, subgraphs=True: (namespace_tuple, mode, chunk)
+                    ns: tuple[str, ...] = ()
+                    if isinstance(event, tuple):
+                        if len(event) == 3:
+                            # (namespace, mode, chunk) — subgraphs + multi-mode
+                            ns, mode, chunk = event
+                        elif len(event) == 2:
+                            first, second = event
+                            if isinstance(first, tuple):
+                                # (namespace, chunk) — subgraphs + single-mode
+                                ns = first
+                                mode = modes[0] if modes else "values"
+                                chunk = second
+                            else:
+                                # (mode, chunk) — multi-mode, no subgraphs
+                                mode = cast(str, first)
+                                chunk = second
+                        else:
+                            mode = modes[0] if modes else "values"
+                            chunk = event
                     else:
                         mode = modes[0] if modes else "values"
                         chunk = event
@@ -162,6 +186,10 @@ class RunExecutor:
                         only_interrupt_updates=only_interrupt_updates,
                         values_explicit=values_explicit,
                     ):
+                        # Propagate subgraph namespace into the SSE event name so the
+                        # SDK can route subagent messages: "messages|tools:abc123"
+                        if ns:
+                            part = StreamPart(f"{part.event}|{'|'.join(ns)}", part.data)
                         yield part
 
         except Exception as e:
@@ -179,6 +207,7 @@ class RunExecutor:
         interrupt_before: list[str] | None = None,
         interrupt_after: list[str] | None = None,
         checkpoint_id: str | None = None,
+        auth_user: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Execute a graph and return the final state (blocking)."""
         graph = self._registry.get_graph_for_request(
@@ -192,6 +221,8 @@ class RunExecutor:
             configurable["checkpoint_id"] = checkpoint_id
         if config and "configurable" in config:
             configurable.update(config["configurable"])
+        if auth_user is not None:
+            configurable["langgraph_auth_user"] = auth_user
 
         runnable_config: dict[str, Any] = {"configurable": configurable}
         if config:

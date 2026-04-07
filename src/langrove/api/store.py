@@ -10,9 +10,9 @@ from __future__ import annotations
 import mimetypes
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
-from langrove.api.deps import get_db, get_store
+from langrove.api.deps import authorize, get_db, get_store
 from langrove.db.pool import DatabasePool
 from langrove.db.store_repo import StoreRepository
 from langrove.models.store import (
@@ -34,25 +34,40 @@ def _get_service(db: DatabasePool = Depends(get_db)) -> StoreService:
 
 @router.put("/items", status_code=204)
 async def put_item(
+    request: Request,
     body: StorePutRequest,
     store: Any = Depends(get_store),
     service: StoreService = Depends(_get_service),
 ):
+    value = {"namespace": tuple(body.namespace), "key": body.key, "value": body.value}
+    auth_value = await authorize(request, "store", "put", value)
+    # Auth handler may have rewritten namespace
+    ns = (
+        auth_value.get("namespace", tuple(body.namespace))
+        if isinstance(auth_value, dict)
+        else tuple(body.namespace)
+    )
+
     if store is not None:
-        await store.aput(tuple(body.namespace), body.key, body.value)
+        await store.aput(tuple(ns), body.key, body.value)
         return Response(status_code=204)
+    body.namespace = list(ns)
     await service.put(body)
     return Response(status_code=204)
 
 
 @router.get("/items", response_model=Item)
 async def get_item(
+    request: Request,
     key: str = Query(...),
     namespace: str = Query(default=""),
     store: Any = Depends(get_store),
     service: StoreService = Depends(_get_service),
 ):
     ns = namespace.split("/") if namespace else []
+    value = {"namespace": tuple(ns), "key": key}
+    auth_value = await authorize(request, "store", "get", value)
+    ns = list(auth_value.get("namespace", tuple(ns))) if isinstance(auth_value, dict) else ns
 
     if store is not None:
         item = await store.aget(tuple(ns), key)
@@ -73,26 +88,49 @@ async def get_item(
 
 @router.delete("/items", status_code=204)
 async def delete_item(
+    request: Request,
     body: StoreDeleteRequest,
     store: Any = Depends(get_store),
     service: StoreService = Depends(_get_service),
 ):
+    value = {"namespace": tuple(body.namespace), "key": body.key}
+    auth_value = await authorize(request, "store", "delete", value)
+    ns = (
+        auth_value.get("namespace", tuple(body.namespace))
+        if isinstance(auth_value, dict)
+        else tuple(body.namespace)
+    )
+
     if store is not None:
-        await store.adelete(tuple(body.namespace), body.key)
+        await store.adelete(tuple(ns), body.key)
         return Response(status_code=204)
+    body.namespace = list(ns)
     await service.delete(body)
     return Response(status_code=204)
 
 
 @router.post("/items/search", response_model=dict)
 async def search_items(
+    request: Request,
     body: StoreSearchRequest,
     store: Any = Depends(get_store),
     service: StoreService = Depends(_get_service),
 ):
+    ns_prefix = tuple(body.namespace_prefix) if body.namespace_prefix else ()
+    value = {
+        "namespace": ns_prefix,
+        "filter": body.filter,
+        "limit": body.limit,
+        "offset": body.offset,
+    }
+    auth_value = await authorize(request, "store", "search", value)
+    ns_prefix = (
+        auth_value.get("namespace", ns_prefix) if isinstance(auth_value, dict) else ns_prefix
+    )
+
     if store is not None:
         items = await store.asearch(
-            tuple(body.namespace_prefix) if body.namespace_prefix else (),
+            tuple(ns_prefix),
             filter=body.filter,
             limit=body.limit,
             offset=body.offset,
@@ -110,26 +148,40 @@ async def search_items(
             ]
         }
 
+    body.namespace_prefix = list(ns_prefix)
     items = await service.search(body)
     return {"items": items}
 
 
 @router.post("/namespaces", response_model=dict)
 async def list_namespaces(
+    request: Request,
     body: StoreListNamespacesRequest,
     store: Any = Depends(get_store),
     service: StoreService = Depends(_get_service),
 ):
+    ns = tuple(body.prefix) if body.prefix else None
+    value = {
+        "namespace": ns,
+        "suffix": tuple(body.suffix) if body.suffix else None,
+        "max_depth": body.max_depth,
+        "limit": body.limit,
+        "offset": body.offset,
+    }
+    auth_value = await authorize(request, "store", "list_namespaces", value)
+    ns = auth_value.get("namespace", ns) if isinstance(auth_value, dict) else ns
+
     if store is not None:
         namespaces = await store.alist_namespaces(
-            prefix=tuple(body.prefix) if body.prefix else None,
+            prefix=tuple(ns) if ns else None,
             suffix=tuple(body.suffix) if body.suffix else None,
             max_depth=body.max_depth,
             limit=body.limit,
             offset=body.offset,
         )
-        return {"namespaces": [{"path": list(ns)} for ns in namespaces]}
+        return {"namespaces": [{"path": list(n)} for n in namespaces]}
 
+    body.prefix = list(ns) if ns else None
     namespaces = await service.list_namespaces(body)
     return {"namespaces": namespaces}
 
@@ -147,12 +199,7 @@ async def serve_vfs_file(
     store: Any = Depends(get_store),
     service: StoreService = Depends(_get_service),
 ):
-    """Serve a VFS file as raw content with the correct MIME type.
-
-    This enables multi-file Helios compositions where composition.html
-    references src/main.js via relative imports. The browser resolves
-    ``<script src="./src/main.js">`` against this endpoint.
-    """
+    """Serve a VFS file as raw content with the correct MIME type."""
     key = f"/{file_path}" if not file_path.startswith("/") else file_path
     namespace = ("vfs", thread_id)
 
@@ -182,14 +229,10 @@ async def serve_vfs_file(
     if mime_type is None:
         mime_type = "text/plain"
 
-    # Rewrite bare npm package imports to esm.sh CDN URLs so browsers can
-    # resolve them without a bundler (agents write bare specifiers like
-    # `import { Helios } from '@helios-project/core'`).
-    # Also rewrite problematic CDN URLs (skypack has CORS issues).
+    # Rewrite bare npm package imports to esm.sh CDN URLs
     if mime_type in ("text/javascript", "application/javascript", "text/html"):
         import re
 
-        # Bare specifiers → esm.sh
         content = re.sub(
             r"""(from\s+['"])(@helios-project/[^'"]+)(['"])""",
             r"\1https://esm.sh/\2\3",
@@ -200,7 +243,6 @@ async def serve_vfs_file(
             r"\1https://esm.sh/\2\3",
             content,
         )
-        # Skypack → esm.sh (skypack has CORS issues from iframes)
         content = re.sub(
             r"""https://cdn\.skypack\.dev/([^'"]+)""",
             r"https://esm.sh/\1",

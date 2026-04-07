@@ -5,8 +5,6 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID, uuid4
 
-import orjson
-
 from langrove.db.pool import DatabasePool
 from langrove.exceptions import ConflictError, NotFoundError
 
@@ -38,11 +36,11 @@ class ThreadRepository:
         row = await self._db.fetch_one(
             """
             INSERT INTO threads (thread_id, metadata_)
-            VALUES ($1, $2::jsonb)
+            VALUES ($1, $2)
             RETURNING *
             """,
             tid,
-            orjson.dumps(metadata or {}).decode(),
+            metadata or {},
         )
         return self._normalize(row)
 
@@ -60,11 +58,11 @@ class ThreadRepository:
 
         row = await self._db.fetch_one(
             """
-            UPDATE threads SET metadata_ = $1::jsonb, updated_at = NOW()
+            UPDATE threads SET metadata_ = $1, updated_at = NOW()
             WHERE thread_id = $2
             RETURNING *
             """,
-            orjson.dumps(metadata).decode(),
+            metadata,
             thread_id,
         )
         if row is None:
@@ -96,8 +94,8 @@ class ThreadRepository:
             idx += 1
 
         if metadata:
-            conditions.append(f"metadata_ @> ${idx}::jsonb")
-            args.append(orjson.dumps(metadata).decode())
+            conditions.append(f"metadata_ @> ${idx}")
+            args.append(metadata)
             idx += 1
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""

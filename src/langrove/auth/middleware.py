@@ -15,6 +15,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """Authenticates requests using the configured AuthHandler.
 
     Skips auth for health endpoints and docs.
+    Stores both the authenticated user and the Auth instance (if any)
+    on ``request.state`` for downstream authorization.
     """
 
     # Paths that don't require authentication
@@ -23,8 +25,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: Any, handler: AuthHandler):
         super().__init__(app)
         self._handler = handler
+        # Expose the langgraph_sdk.Auth instance for authorization (None for plain function auth)
+        self._auth = getattr(handler, "auth", None)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        # Skip auth for CORS preflight requests
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         # Skip auth for health/docs endpoints
         if request.url.path in self.SKIP_PATHS:
             return await call_next(request)
@@ -33,7 +41,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         headers = {k: v for k, v in request.headers.items()}
 
         try:
-            user = await self._handler.authenticate(headers)
+            user = await self._handler.authenticate(
+                headers,
+                method=request.method,
+                path=request.url.path,
+            )
         except AuthError as e:
             from fastapi.responses import JSONResponse
 
@@ -57,7 +69,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"code": "unauthorized", "message": "Authentication failed"},
             )
 
-        # Store user in request state for downstream access
+        # Store user and auth instance for downstream access
         request.state.user = user
+        request.state.auth = self._auth
 
         return await call_next(request)

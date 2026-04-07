@@ -35,8 +35,10 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
 class DatabasePool:
     """Manages the asyncpg connection pool lifecycle."""
 
-    def __init__(self, database_url: str):
+    def __init__(self, database_url: str, *, min_size: int = 2, max_size: int = 10):
         self._url = database_url
+        self._min_size = min_size
+        self._max_size = max_size
         self._pool: asyncpg.Pool | None = None
 
     @property
@@ -49,8 +51,8 @@ class DatabasePool:
         """Create the connection pool."""
         self._pool = await asyncpg.create_pool(
             self._url,
-            min_size=2,
-            max_size=10,
+            min_size=self._min_size,
+            max_size=self._max_size,
             init=_init_connection,
         )
 

@@ -8,5 +8,10 @@ from langrove.auth.base import AuthHandler, AuthUser
 class NoopAuthHandler(AuthHandler):
     """Always authenticates. Used in development mode."""
 
-    async def authenticate(self, headers: dict[str, str]) -> AuthUser:
-        return AuthUser(identity="anonymous", role="admin")
+    async def authenticate(
+        self,
+        headers: dict[str, str],
+        method: str = "",
+        path: str = "",
+    ) -> AuthUser:
+        return AuthUser(identity="anonymous", permissions=("authenticated",))

@@ -31,6 +31,7 @@ class TaskPublisher:
         interrupt_after: list[str] | None = None,
         checkpoint_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        auth_user: dict[str, Any] | None = None,
     ) -> str:
         """Publish a task to the Redis Stream.
 
@@ -50,6 +51,7 @@ class TaskPublisher:
             "interrupt_after": interrupt_after,
             "checkpoint_id": checkpoint_id,
             "metadata": metadata or {},
+            "auth_user": auth_user,
         }
 
         message_id = await self._redis.xadd(

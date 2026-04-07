@@ -2,7 +2,21 @@
 
 from __future__ import annotations
 
+import logging
+
 import click
+
+
+def _setup_logging(level: str = "INFO") -> None:
+    """Configure root logging so all langrove loggers emit to stdout."""
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        format="%(asctime)s %(levelname)-8s %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    # Keep noisy third-party loggers quiet
+    for noisy in ("asyncio", "httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 @click.group()
@@ -14,9 +28,35 @@ def main():
 @click.option("--host", default="0.0.0.0", help="Bind host")
 @click.option("--port", default=8123, type=int, help="Bind port")
 @click.option("--reload", is_flag=True, help="Enable auto-reload for development")
-def serve(host: str, port: int, reload: bool):
+@click.option("--db-pool-min-size", default=None, type=int, help="Min DB connections (default: 2)")
+@click.option(
+    "--db-pool-max-size", default=None, type=int, help="Max DB connections (default: 10)"
+)
+@click.option(
+    "--log-level",
+    default="info",
+    type=click.Choice(["debug", "info", "warning", "error"], case_sensitive=False),
+    help="Log level (default: info)",
+)
+def serve(
+    host: str,
+    port: int,
+    reload: bool,
+    db_pool_min_size: int | None,
+    db_pool_max_size: int | None,
+    log_level: str,
+):
     """Start the API server."""
+    import os
+
     import uvicorn
+
+    _setup_logging(log_level)
+
+    if db_pool_min_size is not None:
+        os.environ["LANGROVE_DB_POOL_MIN_SIZE"] = str(db_pool_min_size)
+    if db_pool_max_size is not None:
+        os.environ["LANGROVE_DB_POOL_MAX_SIZE"] = str(db_pool_max_size)
 
     uvicorn.run(
         "langrove.app:create_app",
@@ -24,16 +64,62 @@ def serve(host: str, port: int, reload: bool):
         port=port,
         reload=reload,
         factory=True,
+        log_level=log_level.lower(),
     )
 
 
 @main.command()
 @click.option("--worker-id", default=None, help="Unique worker identifier")
-def worker(worker_id: str | None):
+@click.option(
+    "--concurrency", default=None, type=int, help="Max concurrent tasks per worker (default: 5)"
+)
+@click.option(
+    "--task-timeout", default=None, type=int, help="Task timeout in seconds (default: 900)"
+)
+@click.option(
+    "--shutdown-timeout",
+    default=None,
+    type=int,
+    help="Graceful shutdown timeout in seconds (default: 30)",
+)
+@click.option("--db-pool-min-size", default=None, type=int, help="Min DB connections (default: 2)")
+@click.option(
+    "--db-pool-max-size", default=None, type=int, help="Max DB connections (default: 10)"
+)
+@click.option(
+    "--log-level",
+    default="info",
+    type=click.Choice(["debug", "info", "warning", "error"], case_sensitive=False),
+    help="Log level (default: info)",
+)
+def worker(
+    worker_id: str | None,
+    concurrency: int | None,
+    task_timeout: int | None,
+    shutdown_timeout: int | None,
+    db_pool_min_size: int | None,
+    db_pool_max_size: int | None,
+    log_level: str,
+):
     """Start a background run worker."""
     import asyncio
+    import os
 
     from langrove.worker import run_worker
+
+    _setup_logging(log_level)
+
+    # CLI flags override env vars (Settings reads from env)
+    if concurrency is not None:
+        os.environ["LANGROVE_WORKER_CONCURRENCY"] = str(concurrency)
+    if task_timeout is not None:
+        os.environ["LANGROVE_TASK_TIMEOUT_SECONDS"] = str(task_timeout)
+    if shutdown_timeout is not None:
+        os.environ["LANGROVE_SHUTDOWN_TIMEOUT_SECONDS"] = str(shutdown_timeout)
+    if db_pool_min_size is not None:
+        os.environ["LANGROVE_DB_POOL_MIN_SIZE"] = str(db_pool_min_size)
+    if db_pool_max_size is not None:
+        os.environ["LANGROVE_DB_POOL_MAX_SIZE"] = str(db_pool_max_size)
 
     asyncio.run(run_worker(worker_id))
 
