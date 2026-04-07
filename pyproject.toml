@@ -1,6 +1,6 @@
 [project]
 name = "langrove"
-version = "0.1.0"
+version = "0.1.1"
 description = "Open-source, self-hosted drop-in replacement for LangGraph deployment. Agent Protocol compliant."
 readme = "README.md"
 authors = [
@@ -38,9 +38,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/devangpadhiyar/langgraph-deployment"
-Repository = "https://github.com/devangpadhiyar/langgraph-deployment"
-Issues = "https://github.com/devangpadhiyar/langgraph-deployment/issues"
+Homepage = "https://github.com/devangpadhiyar/langrove"
+Repository = "https://github.com/devangpadhiyar/langrove"
+Issues = "https://github.com/devangpadhiyar/langrove/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -67,10 +67,12 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+    "build>=1.4.2",
     "httpx>=0.28.1",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "ruff>=0.11",
+    "twine>=6.2.0",
 ]
 
 [tool.ruff]
