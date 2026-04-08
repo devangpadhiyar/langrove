@@ -6,9 +6,9 @@ Works with `langgraph_sdk.get_client()`, `useStream()` React hook, and Agent Cha
 ## Architecture
 
 - **API Server** (FastAPI/uvicorn): HTTP endpoints, SSE streaming for foreground runs
-- **Worker Process**: Consumes background tasks from Redis Streams, executes LangGraph graphs
+- **Worker Process**: Consumes background tasks via Dramatiq (RedisBroker), executes LangGraph graphs
 - **PostgreSQL**: Threads, runs, assistants, store + LangGraph checkpoint tables
-- **Redis**: Task queue (Streams + consumer groups), live stream relay (Pub/Sub), event replay
+- **Redis**: Task queue (Dramatiq RedisBroker — RPOPLPUSH late-ack), live stream relay (Pub/Sub), event replay
 
 ## Key Patterns
 
@@ -28,13 +28,14 @@ data: null
 ```
 Content-Type: text/event-stream. First event always `metadata`, last always `end`.
 
-### Background Runs (Redis Streams + Late-Ack)
-1. API: XADD task to stream
-2. Worker: XREADGROUP (enters Pending Entries List)
-3. Worker: execute graph, publish events via pub/sub
-4. Worker: XACK only after success (late acknowledgment)
-5. On crash: XAUTOCLAIM reclaims after 60s
-6. Poison messages (>3 attempts): dead-letter stream
+### Background Runs (Dramatiq + Late-Ack)
+1. API: `TaskPublisher.publish()` → `asyncio.to_thread(handle_run.send_with_options, kwargs=payload)`
+2. Dramatiq `RedisBroker` atomically moves message from queue → processing list (RPOPLPUSH)
+3. Worker `handle_run` actor executes graph, publishes events via Redis pub/sub
+4. Actor returns cleanly → Dramatiq deletes from processing list (ACK)
+5. On crash: message stays in processing list; Dramatiq requeue thread reclaims it
+6. After `max_retries` failures: `DeadLetterMiddleware` writes to `langrove:tasks:dead` stream
+7. Run cancellation: API sets `langrove:runs:{run_id}:cancel` key; actor polls after each event
 
 ### Thread State
 Thread `values` and `interrupts` are NOT stored in the threads table. They are derived from the LangGraph checkpointer at read time.
@@ -53,7 +54,7 @@ src/langrove/
   services/       - Business logic (one class per domain)
   graph/          - Graph loading + registry
   streaming/      - SSE executor, formatter, broker
-  queue/          - Redis Streams publisher, consumer, recovery
+  queue/          - Dramatiq broker setup (broker.py), task actors (tasks.py), publisher (publisher.py)
   auth/           - Auth handlers + middleware
   api/            - FastAPI route handlers (thin, delegate to services)
   worker.py       - Worker process main loop

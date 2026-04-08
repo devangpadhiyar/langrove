@@ -1,5 +1,5 @@
 ---
-description: Redis Streams task queue, consumer groups, late-ack delivery, recovery, and worker lifecycle
+description: Dramatiq task queue, at-least-once delivery, cancellation, dead-letter, and worker lifecycle
 globs:
   - "src/langrove/queue/**/*.py"
   - "src/langrove/worker.py"
@@ -7,78 +7,115 @@ globs:
 
 # Worker & Task Queue
 
-## Redis Streams Architecture
-- Task stream: `langrove:tasks`
-- Consumer group: `langrove:workers`
-- Worker ID: `worker-{uuid.hex[:8]}` (auto-generated)
-- Payload: single field `{"payload": orjson.dumps(full_dict).decode()}`
+## Library: Dramatiq + RedisBroker
+- **Package:** `dramatiq[redis]` (v2.1.0+, 5.2k stars, actively maintained)
+- **Why Dramatiq over alternatives:**
+  - ARQ: maintenance mode
+  - Taskiq: asyncio-native but smaller community (2.1k stars); RedisStreamBroker late-ack is native but library surface is larger
+  - SAQ: only 836 stars
+  - Dramatiq: largest community, built-in retries/dead-letter, `AsyncIO` middleware enables async actors
 
 ## Late Acknowledgment (At-Least-Once Delivery)
-1. `XREADGROUP` reads from stream → enters Pending Entries List (PEL)
-2. Worker processes task
-3. `XACK` only on success → removes from PEL
-4. On failure: DON'T ACK → task remains in PEL for recovery
+Dramatiq's `RedisBroker` uses an atomic RPOPLPUSH / BLMOVE pattern:
+1. Worker atomically moves message from `langrove:queue` → `langrove:queue.processing` list
+2. Actor runs
+3. On success: message deleted from processing list (ACKed)
+4. On crash / failure: message stays in processing list — Dramatiq's requeue thread reclaims it after timeout and re-delivers
+5. No custom consumer groups or XAUTOCLAIM needed
 
-## Consumer Behavior
-- First checks pending messages: `XREADGROUP {..., "0"}` (reads from PEL)
-- Then reads new messages: `XREADGROUP {..., ">"}` (new only)
-- Blocking: `block=5000` (5 seconds) if no new messages
-- Deduplication: `_in_flight_ids` set prevents multiple slots claiming same pending message
+## Middleware Stack (registered in `queue/broker.py`)
+```
+RedisBroker
+  ├── AsyncIO()          — one shared event loop per worker process; async actors run concurrently
+  ├── TimeLimit()        — kills actors exceeding task_timeout_ms (default 900 000 ms)
+  ├── Retries()          — exponential backoff, up to max_delivery_attempts (default 3)
+  └── DeadLetterMiddleware() — after final retry failure: XADD to langrove:tasks:dead stream
+```
+Middleware order matters: `Retries` runs before `DeadLetterMiddleware` so dead-lettering only happens after all retries are exhausted.
 
-## Concurrency
-- `asyncio.Semaphore(concurrency)` limits concurrent tasks (default 5)
-- Task tracking: `asyncio.create_task()` + `add_done_callback(tasks.discard)` for auto-cleanup
-- In-flight tasks stored in `self._tasks` set for graceful shutdown
+## Broker Setup (import order is critical)
+`setup_broker()` in `queue/broker.py` **must** be called before `queue/tasks.py` is imported.
+The `@dramatiq.actor` decorator registers the actor with whichever broker is current at import time.
+- **API server:** called in `app.py` lifespan before any request handler imports tasks
+- **Worker process:** called in `worker.py` before `from langrove.queue.tasks import handle_run`
+- **Publisher / dead-letter retry:** use lazy imports so `setup_broker()` is guaranteed to have run first
 
-## Recovery Monitor (queue/recovery.py)
-- Runs every 30 seconds (configurable `interval_seconds`)
-- `XAUTOCLAIM` reclaims tasks idle > `timeout_ms` (default 900s = 15 min)
-- Poison message detection: `XPENDING` checks `times_delivered` count
-- If delivery count > `max_attempts` (default 3):
-  1. XADD to dead-letter stream: `langrove:tasks:dead`
-  2. XACK original message
-  3. XDEL from main stream
-  4. Callback: `on_reclaim(run_id)` updates DB run status
+## Worker Resources (Lazy Initialisation)
+All worker-scoped resources (DB pool, Redis client, checkpointer, store, executor, event broker)
+are initialised lazily on the **first task invocation** in `queue/tasks.py`:
 
-## Cancel Mechanism
-- API sets Redis key: `SET langrove:runs:{run_id}:cancel` (TTL 3600s)
-- Worker polls: `EXISTS cancel_key` after each streaming event
-- On cancel: break generator loop, return gracefully
+```python
+_state: dict | None = None
+_state_lock: asyncio.Lock | None = None
+
+async def _get_state() -> dict:
+    global _state, _state_lock
+    if _state_lock is None:
+        _state_lock = asyncio.Lock()
+    async with _state_lock:
+        if _state is None:
+            _state = await _setup_resources()
+    return _state
+```
+
+`asyncio.Lock` is safe here because Dramatiq's `AsyncIO` middleware runs all async actors on a single shared event loop per worker process.
+
+## Actor Definition
+```python
+@dramatiq.actor(queue_name="langrove", max_retries=3)
+async def handle_run(**payload) -> None:
+    state = await _get_state()
+    ...
+```
+- `queue_name="langrove"` — all background runs share one queue
+- `max_retries=3` — overrides the `Retries` middleware default; `DeadLetterMiddleware` fires after the 3rd failure
+
+## Publisher (API → Worker)
+```python
+# queue/publisher.py
+await asyncio.to_thread(handle_run.send_with_options, kwargs=payload)
+```
+- `send_with_options` is synchronous (Redis RPUSH); `asyncio.to_thread` keeps the API event loop non-blocking
+- No broker reference needed — uses the global broker set by `setup_broker()`
+- `TaskPublisher()` takes no constructor arguments
+
+## Cancellation Mechanism
+Cancellation is independent of Dramatiq — it is a custom Redis key polling pattern inside the actor:
+1. API calls `cancel_run()` → sets `langrove:runs:{run_id}:cancel` key in Redis
+2. `handle_run` actor polls `redis.exists(cancel_key)` after **every** streamed event
+3. On detection: breaks the stream loop, publishes `RunCancelled` SSE terminal event, deletes key, `return`s cleanly
+4. Clean `return` → Dramatiq ACKs the message (no retry triggered)
+
+This works with any task queue library — Dramatiq has no involvement in the cancellation path.
+
+## Dead-Letter Stream
+- Stream key: `langrove:tasks:dead` (Redis Stream, same format as before)
+- Written by `DeadLetterMiddleware.after_process_message` when `current_retries >= actor.max_retries`
+- Uses synchronous `redis` client (Dramatiq runs in threads, not the async event loop)
+- `/dead-letter` GET endpoint reads via `aioredis.xrange`
+- `/dead-letter/{id}/retry` re-enqueues via `asyncio.to_thread(handle_run.send_with_options, kwargs=payload)`
 
 ## Graceful Shutdown (Two-Phase)
-1. **First SIGTERM:** set `shutdown_event`, cancel main loop (consumer + recovery)
-2. **Second SIGTERM:** set `force_quit`, cancel all in-flight tasks immediately
-3. Wait for in-flight with timeout: `asyncio.wait(tasks, timeout=30)`
-4. Cleanup: close psycopg pools (checkpointer, store), asyncpg pool, Redis client
+1. **First SIGTERM:** sets `shutdown_event`; worker drains in-flight via `worker.stop(join=True)` in executor
+2. **Second SIGTERM:** sets `force_quit`; calls `worker.stop(join=False)` immediately
+3. Cleanup: worker threads exit; lazy `_state` resources (DB, Redis pools) are not explicitly closed on shutdown (process exit handles them)
 
-## Worker Task Handler Flow
-```
-1. Publish metadata event (run_id)
-2. Update run status → "running"
-3. Set thread status → "busy"
-4. async for part in executor.execute_stream():
-     - Check cancel_key (break if exists)
-     - Publish event to Redis pub/sub
-     - Store event in Redis Stream
-5. Publish end event
-6. Update run status → "success"
-7. Set thread status → "idle"
-```
+## Worker Concurrency
+- `dramatiq.Worker(broker, worker_threads=settings.worker_concurrency)` — default 5 threads
+- Each thread runs one Dramatiq message at a time
+- With `AsyncIO` middleware, all async actors share one event loop: effective async concurrency = `worker_threads`
 
 ## Gotchas
-- Unacked tasks stay in PEL across restarts — recovery reclaims them
-- Thread status may get stuck "busy" if worker crashes mid-run (recovery only updates run status)
-- Dead-lettered messages are never auto-retried — manual inspection via `/dead-letter` endpoint
-- XAUTOCLAIM requires consumer group to exist; gracefully suppresses errors if not ready
-- Event publishing during execution: pub/sub (live) + Streams (replay) — both written per event
+- `setup_broker()` must precede any `from langrove.queue.tasks import handle_run` — import order is critical
+- Dramatiq's `AsyncIO` middleware creates the event loop lazily on first async actor; `_state_lock` must be initialised inside the loop (not at module level)
+- Dead-letter middleware uses synchronous `redis` (not `aioredis`) because `after_process_message` runs on a Dramatiq worker thread, not the async event loop
+- `TaskPublisher()` constructor takes no arguments; the global Dramatiq broker is used implicitly
+- Thread status may remain "busy" if the worker process is hard-killed (no graceful shutdown) — no automatic recovery beyond the DB run status update on next delivery attempt
+- Event publishing during execution: pub/sub (live) + Redis Streams (replay) — both written per event; unchanged from before
 
-## 2026-04-08: Taskiq replaces custom Redis Streams consumer
-- **Library:** `taskiq` + `taskiq-redis` (RedisStreamBroker) replaced hand-rolled `TaskConsumer` + `RecoveryMonitor`
-- **Why Taskiq over alternatives:** asyncio-native; `RedisStreamBroker` uses XREADGROUP/XACK natively (true late-ack); 2.1k stars, active. ARQ is in maintenance mode. Dramatiq requires a thread-based asyncio shim. SAQ only 836 stars.
-- **Late-ack:** Taskiq's `RedisStreamBroker` uses Redis Streams consumer groups — message not XACK'd until task function returns without raising. Crash = message stays in PEL and is reclaimed automatically by Taskiq.
-- **Retry / dead-letter:** `SimpleRetryMiddleware(default_retry_count=N)` + `broker.register_task(..., retry_on_error=True, max_retries=N)`. On last attempt failure, `handle_run` manually XADDs to `langrove:tasks:dead` stream (preserves `/dead-letter` API compatibility).
-- **DI pattern:** `ctx: Context = TaskiqDepends()` injects broker state into task functions. `state.*` fields set up in `WORKER_STARTUP` hook.
-- **Worker startup/shutdown:** `@broker.on_event(TaskiqEvents.WORKER_STARTUP/SHUTDOWN)` hooks replace the inline resource init/cleanup in the old `run_worker()`.
-- **Programmatic runner:** `Receiver(broker, max_async_tasks=N)` → `receiver.listen()` replaces the custom consumer loop. No CLI needed.
-- **Publisher:** API server creates a publisher-only broker (`RedisStreamBroker`, `broker.startup()` only, no `Receiver`). Uses `broker.kick(TaskiqMessage(...))` to enqueue.
-- **Dead-letter retry endpoint:** Uses `task_broker.kick(TaskiqMessage(...))` instead of raw `redis.xadd(TASK_STREAM, fields)` so retried jobs go through the normal Taskiq pipeline.
+## 2026-04-08: Dramatiq replaces custom Redis Streams consumer
+- Deleted: `queue/consumer.py` (XREADGROUP loop), `queue/recovery.py` (XAUTOCLAIM monitor)
+- Added: `queue/broker.py` (setup_broker + DeadLetterMiddleware), updated `queue/tasks.py`, `queue/publisher.py`, `worker.py`
+- Late-ack preserved via Dramatiq `RedisBroker` RPOPLPUSH processing-list pattern
+- Cancellation unchanged: Redis key polling inside `handle_run` actor
+- Dead-letter stream (`langrove:tasks:dead`) and `/dead-letter` API fully compatible
