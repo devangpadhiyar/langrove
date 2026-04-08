@@ -36,7 +36,8 @@ async def run_worker(worker_id: str | None = None):
 
         os.environ.update(config.env)
 
-    logger.info("Langrove Worker starting (Dramatiq / Redis)...")
+    effective_id = worker_id or "worker-default"
+    logger.info("Langrove Worker starting worker_id=%s (Dramatiq / Redis)...", effective_id)
 
     # 1. Set up the global Dramatiq broker BEFORE importing tasks so that the
     #    @dramatiq.actor decorator attaches to the correct broker instance.
@@ -81,18 +82,32 @@ async def run_worker(worker_id: str | None = None):
         loop.add_signal_handler(sig, _on_signal)
 
     worker.start()
-    logger.info("Worker ready (threads=%d). Waiting for tasks...", settings.worker_concurrency)
+    logger.info(
+        "Worker ready worker_id=%s (threads=%d). Waiting for tasks...",
+        effective_id,
+        settings.worker_concurrency,
+    )
 
     try:
         # Block until a shutdown signal arrives
         await shutdown_event.wait()
 
-        logger.info("Stopping worker, draining in-flight tasks...")
-        # stop(join=True) blocks the thread until all in-flight messages finish
-        # or the timeout expires; run in executor to avoid blocking the event loop
-        await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: worker.stop(join=True),
+        logger.info(
+            "Stopping worker, draining in-flight tasks (timeout=%ds)...",
+            settings.shutdown_timeout_seconds,
         )
+        # stop(join=True) blocks until all in-flight messages finish; run in executor
+        # to avoid blocking the event loop, with a configurable drain timeout.
+        try:
+            await asyncio.wait_for(
+                asyncio.get_running_loop().run_in_executor(None, lambda: worker.stop(join=True)),
+                timeout=settings.shutdown_timeout_seconds,
+            )
+        except TimeoutError:
+            logger.warning(
+                "Graceful shutdown timed out after %ds — forcing stop.",
+                settings.shutdown_timeout_seconds,
+            )
+            worker.stop(join=False)
     finally:
         logger.info("Worker stopped.")

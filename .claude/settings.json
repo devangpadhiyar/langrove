@@ -55,9 +55,8 @@
       {
         "hooks": [
           {
-            "type": "agent",
-            "prompt": "Check if code was modified in this session. If yes, verify: 1) ruff check passes, 2) ruff format passes, 3) pytest passes. If any fail, return {\"ok\": false, \"reason\": \"description of failures\"}.",
-            "timeout": 120
+            "type": "command",
+            "command": "cd /Users/devangpadhiyar/langgraph-deployment && uv run ruff check . --quiet && uv run ruff format --check . --quiet && uv run pytest --tb=short -q"
           }
         ]
       }

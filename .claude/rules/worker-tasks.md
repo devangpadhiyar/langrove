@@ -96,14 +96,22 @@ This works with any task queue library — Dramatiq has no involvement in the ca
 - `/dead-letter/{id}/retry` re-enqueues via `asyncio.to_thread(handle_run.send_with_options, kwargs=payload)`
 
 ## Graceful Shutdown (Two-Phase)
-1. **First SIGTERM:** sets `shutdown_event`; worker drains in-flight via `worker.stop(join=True)` in executor
-2. **Second SIGTERM:** sets `force_quit`; calls `worker.stop(join=False)` immediately
-3. Cleanup: worker threads exit; lazy `_state` resources (DB, Redis pools) are not explicitly closed on shutdown (process exit handles them)
+1. **First SIGTERM:** sets `shutdown_event`; worker drains in-flight via `worker.stop(join=True)` in executor (timeout = `settings.shutdown_timeout_seconds`, default 30s)
+2. **Drain timeout exceeded:** `asyncio.wait_for` raises `TimeoutError`; falls back to `worker.stop(join=False)` immediately
+3. **Second SIGTERM (before drain completes):** sets `force_quit`; calls `worker.stop(join=False)` immediately
+4. Cleanup: worker threads exit; lazy `_state` resources (DB, Redis pools) are not explicitly closed on shutdown (process exit handles them)
 
 ## Worker Concurrency
 - `dramatiq.Worker(broker, worker_threads=settings.worker_concurrency)` — default 5 threads
 - Each thread runs one Dramatiq message at a time
 - With `AsyncIO` middleware, all async actors share one event loop: effective async concurrency = `worker_threads`
+
+## CLI Options (`langrove worker`)
+- `--worker-id ID` — logged at startup for process identification (default: "worker-default")
+- `--concurrency N` — overrides `LANGROVE_WORKER_CONCURRENCY` (default: 5)
+- `--task-timeout N` — task timeout in seconds, overrides `LANGROVE_TASK_TIMEOUT_SECONDS` (default: 900)
+- `--shutdown-timeout N` — graceful drain timeout in seconds, overrides `LANGROVE_SHUTDOWN_TIMEOUT_SECONDS` (default: 30)
+- `--db-pool-min-size` / `--db-pool-max-size` — asyncpg pool bounds for worker DB connections
 
 ## Gotchas
 - `setup_broker()` must precede any `from langrove.queue.tasks import handle_run` — import order is critical
