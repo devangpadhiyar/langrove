@@ -37,6 +37,9 @@ Content-Type: text/event-stream. First event always `metadata`, last always `end
 6. After `max_retries` failures: `DeadLetterMiddleware` writes to `langrove:tasks:dead` stream
 7. Run cancellation: API sets `langrove:runs:{run_id}:cancel` key; actor polls after each event
 
+**Queue name:** `langrove` — hardcoded in `@dramatiq.actor(queue_name="langrove")` in `queue/tasks.py`.
+All background runs share this single queue. Pass `-Q langrove` to `langrove worker` in production to be explicit.
+
 ### Thread State
 Thread `values` and `interrupts` are NOT stored in the threads table. They are derived from the LangGraph checkpointer at read time.
 
@@ -66,15 +69,20 @@ src/langrove/
 # Development
 uv sync                              # Install dependencies
 uv run langrove serve              # Start API server (port 8123)
-uv run langrove worker             # Start background worker (all queues, 5 threads)
+uv run langrove worker             # Start background worker (default: all queues, 5 threads)
 docker compose up postgres redis     # Start infra only
 
-# Worker — Dramatiq-native flags
-uv run langrove worker -Q langrove               # Listen on specific queue
-uv run langrove worker -t 10                     # 10 worker threads (--concurrency)
+# Worker — Dramatiq-native flags (-Q and -t mirror upstream dramatiq CLI)
+uv run langrove worker -Q langrove               # Explicit queue name (recommended in prod)
+uv run langrove worker -t 10                     # 10 worker threads
 uv run langrove worker --max-retries 5           # 5 attempts before dead-letter
 uv run langrove worker --worker-timeout 1000     # Idle-poll interval 1 s (ms)
-uv run langrove worker --worker-id worker-1 -t 10 --shutdown-timeout 60
+uv run langrove worker --worker-id worker-1 -Q langrove -t 10 --shutdown-timeout 60
+
+# Production (Docker)
+docker compose up -d                             # Full stack
+docker compose up -d --scale worker=3           # 3 worker replicas
+docker compose exec api uv run alembic upgrade head  # Run migrations
 
 # Testing
 uv run pytest                        # Run all tests

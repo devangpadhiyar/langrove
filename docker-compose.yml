@@ -10,22 +10,22 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://langrove:langrove@postgres:5432/langrove
-      REDIS_URL: redis://redis:6379
+      LANGROVE_DATABASE_URL: postgresql://langrove:langrove@postgres:5432/langrove
+      LANGROVE_REDIS_URL: redis://redis:6379
     volumes:
       - .:/app
 
   worker:
     build: .
-    command: langrove worker
+    command: langrove worker --worker-id worker-1 -Q langrove
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://langrove:langrove@postgres:5432/langrove
-      REDIS_URL: redis://redis:6379
+      LANGROVE_DATABASE_URL: postgresql://langrove:langrove@postgres:5432/langrove
+      LANGROVE_REDIS_URL: redis://redis:6379
     volumes:
       - .:/app
 

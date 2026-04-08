@@ -67,7 +67,9 @@ async def handle_run(**payload) -> None:
     state = await _get_state()
     ...
 ```
-- `queue_name="langrove"` — all background runs share one queue
+- `queue_name="langrove"` — **the queue name is `langrove`** (hardcoded). All background runs share this single queue.
+  - Redis keys: `langrove` (main list, RPUSH target) and `langrove.processing` (in-flight RPOPLPUSH list)
+  - Always pass `-Q langrove` to `langrove worker` in production to be explicit about which queue is consumed.
 - `max_retries=3` — overrides the `Retries` middleware default; `DeadLetterMiddleware` fires after the 3rd failure
 
 ## Publisher (API → Worker)
