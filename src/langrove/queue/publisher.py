@@ -1,22 +1,21 @@
-"""Task publisher -- enqueues background run tasks via Taskiq."""
+"""Task publisher -- enqueues background run tasks via Dramatiq."""
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
-
-from taskiq import TaskiqMessage
 
 
 class TaskPublisher:
-    """Publishes background run tasks to the Taskiq broker (Redis Streams).
+    """Publishes background run tasks via the Dramatiq broker.
 
-    Wraps a Taskiq AsyncBroker. Each call to publish() kicks a
-    'handle_run' job that the Taskiq worker will pick up and execute
-    with at-least-once delivery via Redis Streams XREADGROUP/XACK.
+    Calls ``handle_run.send_with_options(kwargs=payload)`` in a thread pool
+    (Dramatiq's broker operations are synchronous) so the async API event loop
+    is not blocked.
+
+    No broker instance is passed — Dramatiq uses the global broker registered
+    by ``queue.broker.setup_broker()``, which is called at API server startup.
     """
-
-    def __init__(self, broker: Any):
-        self._broker = broker
 
     async def publish(
         self,
@@ -36,31 +35,26 @@ class TaskPublisher:
         metadata: dict[str, Any] | None = None,
         auth_user: dict[str, Any] | None = None,
     ) -> str:
-        """Enqueue a background run task.
+        """Enqueue a background run task. Returns the run_id."""
+        # Lazy import ensures setup_broker() has already been called.
+        from langrove.queue.tasks import handle_run
 
-        Returns the task ID (run_id used for idempotency).
-        """
-        msg = TaskiqMessage(
-            task_id=run_id,  # Use run_id as task_id for traceability
-            task_name="handle_run",
-            labels={},
-            args=[],
-            kwargs={
-                "run_id": run_id,
-                "thread_id": thread_id,
-                "assistant_id": assistant_id,
-                "graph_id": graph_id,
-                "input": input,
-                "command": command,
-                "config": config,
-                "stream_mode": stream_mode,
-                "stream_subgraphs": stream_subgraphs,
-                "interrupt_before": interrupt_before,
-                "interrupt_after": interrupt_after,
-                "checkpoint_id": checkpoint_id,
-                "metadata": metadata or {},
-                "auth_user": auth_user,
-            },
-        )
-        await self._broker.kick(msg)
+        payload = {
+            "run_id": run_id,
+            "thread_id": thread_id,
+            "assistant_id": assistant_id,
+            "graph_id": graph_id,
+            "input": input,
+            "command": command,
+            "config": config,
+            "stream_mode": stream_mode,
+            "stream_subgraphs": stream_subgraphs,
+            "interrupt_before": interrupt_before,
+            "interrupt_after": interrupt_after,
+            "checkpoint_id": checkpoint_id,
+            "metadata": metadata or {},
+            "auth_user": auth_user,
+        }
+        # send_with_options is synchronous (Redis RPUSH); run in thread pool.
+        await asyncio.to_thread(handle_run.send_with_options, kwargs=payload)
         return run_id

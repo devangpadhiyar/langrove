@@ -84,12 +84,15 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
         app.state.settings = settings
         app.state.config = config
 
-        # Task broker (publisher-only: API enqueues tasks, worker consumes them)
-        from taskiq_redis import RedisStreamBroker
+        # Set up Dramatiq broker BEFORE importing tasks (the @dramatiq.actor
+        # decorator attaches to whichever broker is current at import time).
+        from langrove.queue.broker import setup_broker
 
-        task_broker = RedisStreamBroker(settings.redis_url)
-        await task_broker.startup()
-        app.state.task_broker = task_broker
+        setup_broker(
+            settings.redis_url,
+            max_delivery_attempts=settings.max_delivery_attempts,
+            task_timeout_ms=settings.task_timeout_seconds * 1000,
+        )
 
         # Auto-create assistants for all graphs defined in langgraph.json
         assistant_service = AssistantService(AssistantRepository(db_pool), registry)
@@ -98,7 +101,6 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
         yield
 
         # Shutdown
-        await task_broker.shutdown()
         if cp_pool:
             await cp_pool.close()
         if store_pool:

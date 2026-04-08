@@ -8,11 +8,11 @@ import orjson
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
-from langrove.api.deps import get_db, get_redis, get_task_broker
+from langrove.api.deps import get_db, get_redis
 from langrove.db.pool import DatabasePool
 from langrove.db.run_repo import RunRepository
 from langrove.exceptions import NotFoundError
-from langrove.queue.tasks import DEAD_LETTER_STREAM
+from langrove.queue.broker import DEAD_LETTER_STREAM
 
 router = APIRouter(prefix="/dead-letter", tags=["dead-letter"])
 
@@ -55,29 +55,25 @@ async def retry_dead_letter(
     message_id: str,
     redis=Depends(get_redis),
     db: DatabasePool = Depends(get_db),
-    task_broker=Depends(get_task_broker),
 ):
-    """Re-enqueue a dead-lettered task for retry via the Taskiq broker."""
+    """Re-enqueue a dead-lettered task via the Dramatiq broker."""
     entries = await redis.xrange(DEAD_LETTER_STREAM, min=message_id, max=message_id, count=1)
     if not entries:
         raise NotFoundError("dead-letter", message_id)
     _, fields = entries[0]
 
-    # Re-enqueue via Taskiq so it goes through the normal pipeline
     if "payload" in fields:
-        from taskiq import TaskiqMessage
+        import asyncio
 
         payload = orjson.loads(fields["payload"])
-        run_id = payload.get("run_id", "")
+        run_id = payload.get("run_id")
 
-        msg = TaskiqMessage(
-            task_id=run_id,
-            task_name="handle_run",
-            labels={},
-            args=[],
-            kwargs=payload,
-        )
-        await task_broker.kick(msg)
+        # Lazy import: setup_broker() was called at app startup so the global
+        # Dramatiq broker is already configured when this endpoint is hit.
+        from langrove.queue.tasks import handle_run
+
+        # send_with_options is synchronous (Redis RPUSH) — run in thread pool
+        await asyncio.to_thread(handle_run.send_with_options, kwargs=payload)
 
         # Remove from dead-letter stream
         await redis.xdel(DEAD_LETTER_STREAM, message_id)

@@ -1,9 +1,15 @@
-"""Background worker process -- Taskiq with Redis Streams (at-least-once delivery)."""
+"""Background worker process -- Dramatiq with Redis broker (at-least-once delivery).
+
+Dramatiq's RedisBroker moves messages to a processing list atomically via
+RPOPLPUSH/BLMOVE.  Messages are only deleted from that list after the actor
+function returns cleanly, giving at-least-once delivery semantics on worker
+crash.  Retries and dead-lettering are handled by the Retries middleware and
+our custom DeadLetterMiddleware (see queue/broker.py).
+"""
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import signal
 from pathlib import Path
@@ -12,11 +18,8 @@ logger = logging.getLogger(__name__)
 
 
 async def run_worker(worker_id: str | None = None):
-    """Main entry point for the Taskiq worker process."""
+    """Main entry point for the Dramatiq worker process."""
     from dotenv import load_dotenv
-    from taskiq import TaskiqEvents, TaskiqState
-    from taskiq.middlewares.retry_middleware import SimpleRetryMiddleware
-    from taskiq_redis import RedisStreamBroker
 
     from langrove.config import load_config
     from langrove.settings import Settings
@@ -33,87 +36,33 @@ async def run_worker(worker_id: str | None = None):
 
         os.environ.update(config.env)
 
-    logger.info("Langrove Worker starting (Taskiq / Redis Streams)...")
+    logger.info("Langrove Worker starting (Dramatiq / Redis)...")
 
-    # --- Broker: Redis Streams gives native XREADGROUP/XACK late-ack ---
-    broker = RedisStreamBroker(settings.redis_url).with_middlewares(
-        SimpleRetryMiddleware(default_retry_count=settings.max_delivery_attempts),
+    # 1. Set up the global Dramatiq broker BEFORE importing tasks so that the
+    #    @dramatiq.actor decorator attaches to the correct broker instance.
+    from langrove.queue.broker import setup_broker
+
+    setup_broker(
+        settings.redis_url,
+        max_delivery_attempts=settings.max_delivery_attempts,
+        task_timeout_ms=settings.task_timeout_seconds * 1000,
     )
 
-    # --- Startup: initialise all worker-scoped resources into broker state ---
-    @broker.on_event(TaskiqEvents.WORKER_STARTUP)
-    async def startup(state: TaskiqState) -> None:
-        import redis.asyncio as aioredis
+    # 2. Import tasks (registers actors with the broker just configured above).
+    import dramatiq
 
-        from langrove.db.langgraph_pools import setup_checkpointer, setup_store
-        from langrove.db.pool import DatabasePool
-        from langrove.db.run_repo import RunRepository
-        from langrove.db.thread_repo import ThreadRepository
-        from langrove.graph.registry import GraphRegistry
-        from langrove.streaming.broker import EventBroker
-        from langrove.streaming.executor import RunExecutor
+    from langrove.queue.tasks import handle_run  # noqa: F401
 
-        db = DatabasePool(
-            settings.database_url,
-            min_size=settings.db_pool_min_size,
-            max_size=settings.db_pool_max_size,
-        )
-        await db.connect()
+    # 3. Create the Dramatiq worker.
+    #    worker_threads controls concurrency; each thread handles one message
+    #    at a time. With AsyncIO middleware, all async actors share one event
+    #    loop, so effective async concurrency = worker_threads.
+    broker = dramatiq.get_broker()
+    worker = dramatiq.Worker(broker, worker_threads=settings.worker_concurrency)
 
-        redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
-
-        registry = GraphRegistry()
-        if config.graphs:
-            config_dir = Path(settings.config_path).parent
-            registry.load_from_config(config.graphs, config_dir if config_dir != Path() else None)
-
-        checkpointer, cp_pool = await setup_checkpointer(
-            settings.database_url, pool_max_size=settings.checkpointer_pool_max_size
-        )
-        store, store_pool = await setup_store(
-            settings.database_url, pool_max_size=settings.store_pool_max_size
-        )
-
-        state.db = db
-        state.redis = redis_client
-        state.executor = RunExecutor(registry, checkpointer, store=store)
-        state.event_broker = EventBroker(
-            redis_client, event_stream_ttl_seconds=settings.event_stream_ttl_seconds
-        )
-        state.run_repo = RunRepository(db)
-        state.thread_repo = ThreadRepository(db)
-        state.cp_pool = cp_pool
-        state.store_pool = store_pool
-        state.max_delivery_attempts = settings.max_delivery_attempts
-
-        logger.info("Worker resources initialised (concurrency=%d)", settings.worker_concurrency)
-
-    # --- Shutdown: clean up all worker-scoped resources ---
-    @broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
-    async def shutdown(state: TaskiqState) -> None:
-        if getattr(state, "cp_pool", None):
-            await state.cp_pool.close()
-        if getattr(state, "store_pool", None):
-            await state.store_pool.close()
-        if getattr(state, "db", None):
-            await state.db.disconnect()
-        if getattr(state, "redis", None):
-            await state.redis.aclose()
-        logger.info("Worker resources cleaned up.")
-
-    # Register task function with retry settings
-    from langrove.queue.tasks import handle_run
-
-    broker.register_task(
-        handle_run,
-        task_name="handle_run",
-        retry_on_error=True,
-        max_retries=settings.max_delivery_attempts,
-        timeout=settings.task_timeout_seconds,
-    )
-
-    # --- Graceful shutdown via SIGTERM/SIGINT ---
-    # First signal: drain in-flight tasks. Second signal: force quit.
+    # --- Graceful shutdown via SIGTERM/SIGINT (two-phase) ---
+    # First signal: stop accepting new tasks, wait for in-flight to finish.
+    # Second signal: force-stop immediately.
     shutdown_event = asyncio.Event()
     force_quit = False
 
@@ -121,7 +70,8 @@ async def run_worker(worker_id: str | None = None):
         nonlocal force_quit
         if shutdown_event.is_set():
             force_quit = True
-            logger.warning("Force quit — aborting worker immediately.")
+            logger.warning("Force quit — stopping worker immediately.")
+            worker.stop(join=False)
         else:
             logger.info("Worker shutting down gracefully (signal again to force)...")
             shutdown_event.set()
@@ -130,30 +80,19 @@ async def run_worker(worker_id: str | None = None):
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, _on_signal)
 
-    await broker.startup()
-
-    from taskiq.worker.receiver import Receiver
-
-    receiver = Receiver(
-        broker=broker,
-        max_async_tasks=settings.worker_concurrency,
-    )
+    worker.start()
+    logger.info("Worker ready (threads=%d). Waiting for tasks...", settings.worker_concurrency)
 
     try:
-        listen_task = asyncio.ensure_future(receiver.listen())
-        shutdown_wait = asyncio.ensure_future(shutdown_event.wait())
+        # Block until a shutdown signal arrives
+        await shutdown_event.wait()
 
-        # Run until a shutdown signal or the receiver stops on its own
-        await asyncio.wait(
-            [listen_task, shutdown_wait],
-            return_when=asyncio.FIRST_COMPLETED,
+        logger.info("Stopping worker, draining in-flight tasks...")
+        # stop(join=True) blocks the thread until all in-flight messages finish
+        # or the timeout expires; run in executor to avoid blocking the event loop
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: worker.stop(join=True),
         )
-
-        # Cancel the receiver loop
-        listen_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await listen_task
-
     finally:
-        await broker.shutdown()
         logger.info("Worker stopped.")

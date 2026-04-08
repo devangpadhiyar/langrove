@@ -35,11 +35,6 @@ def get_store(request: Request) -> Any:
     return getattr(request.app.state, "store", None)
 
 
-def get_task_broker(request: Request) -> Any:
-    """Get the Taskiq task broker from app state."""
-    return request.app.state.task_broker
-
-
 def get_auth_user(request: Request) -> Any:
     """Get the authenticated user from request state, or None."""
     return getattr(request.state, "user", None)
