@@ -71,3 +71,14 @@ globs:
 - Dead-lettered messages are never auto-retried — manual inspection via `/dead-letter` endpoint
 - XAUTOCLAIM requires consumer group to exist; gracefully suppresses errors if not ready
 - Event publishing during execution: pub/sub (live) + Streams (replay) — both written per event
+
+## 2026-04-08: Taskiq replaces custom Redis Streams consumer
+- **Library:** `taskiq` + `taskiq-redis` (RedisStreamBroker) replaced hand-rolled `TaskConsumer` + `RecoveryMonitor`
+- **Why Taskiq over alternatives:** asyncio-native; `RedisStreamBroker` uses XREADGROUP/XACK natively (true late-ack); 2.1k stars, active. ARQ is in maintenance mode. Dramatiq requires a thread-based asyncio shim. SAQ only 836 stars.
+- **Late-ack:** Taskiq's `RedisStreamBroker` uses Redis Streams consumer groups — message not XACK'd until task function returns without raising. Crash = message stays in PEL and is reclaimed automatically by Taskiq.
+- **Retry / dead-letter:** `SimpleRetryMiddleware(default_retry_count=N)` + `broker.register_task(..., retry_on_error=True, max_retries=N)`. On last attempt failure, `handle_run` manually XADDs to `langrove:tasks:dead` stream (preserves `/dead-letter` API compatibility).
+- **DI pattern:** `ctx: Context = TaskiqDepends()` injects broker state into task functions. `state.*` fields set up in `WORKER_STARTUP` hook.
+- **Worker startup/shutdown:** `@broker.on_event(TaskiqEvents.WORKER_STARTUP/SHUTDOWN)` hooks replace the inline resource init/cleanup in the old `run_worker()`.
+- **Programmatic runner:** `Receiver(broker, max_async_tasks=N)` → `receiver.listen()` replaces the custom consumer loop. No CLI needed.
+- **Publisher:** API server creates a publisher-only broker (`RedisStreamBroker`, `broker.startup()` only, no `Receiver`). Uses `broker.kick(TaskiqMessage(...))` to enqueue.
+- **Dead-letter retry endpoint:** Uses `task_broker.kick(TaskiqMessage(...))` instead of raw `redis.xadd(TASK_STREAM, fields)` so retried jobs go through the normal Taskiq pipeline.

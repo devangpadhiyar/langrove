@@ -15,6 +15,7 @@ from langrove.api.deps import (
     get_graph_registry,
     get_redis,
     get_store,
+    get_task_broker,
 )
 from langrove.db.assistant_repo import AssistantRepository
 from langrove.db.pool import DatabasePool
@@ -37,13 +38,14 @@ def _get_service(
     checkpointer=Depends(get_checkpointer),
     store=Depends(get_store),
     redis=Depends(get_redis),
+    task_broker=Depends(get_task_broker),
 ) -> RunService:
     return RunService(
         run_repo=RunRepository(db),
         thread_repo=ThreadRepository(db),
         assistant_repo=AssistantRepository(db),
         executor=RunExecutor(registry, checkpointer, store=store),
-        publisher=TaskPublisher(redis),
+        publisher=TaskPublisher(task_broker),
         redis=redis,
     )
 

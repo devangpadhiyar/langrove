@@ -8,12 +8,11 @@ import orjson
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
-from langrove.api.deps import get_db, get_redis
+from langrove.api.deps import get_db, get_redis, get_task_broker
 from langrove.db.pool import DatabasePool
 from langrove.db.run_repo import RunRepository
 from langrove.exceptions import NotFoundError
-from langrove.queue.consumer import DEAD_LETTER_STREAM
-from langrove.queue.publisher import TASK_STREAM
+from langrove.queue.tasks import DEAD_LETTER_STREAM
 
 router = APIRouter(prefix="/dead-letter", tags=["dead-letter"])
 
@@ -56,22 +55,34 @@ async def retry_dead_letter(
     message_id: str,
     redis=Depends(get_redis),
     db: DatabasePool = Depends(get_db),
+    task_broker=Depends(get_task_broker),
 ):
-    """Re-publish a dead-lettered task for retry."""
+    """Re-enqueue a dead-lettered task for retry via the Taskiq broker."""
     entries = await redis.xrange(DEAD_LETTER_STREAM, min=message_id, max=message_id, count=1)
     if not entries:
         raise NotFoundError("dead-letter", message_id)
     _, fields = entries[0]
 
-    # Re-publish to task stream
-    await redis.xadd(TASK_STREAM, fields)
-    # Remove from dead-letter
-    await redis.xdel(DEAD_LETTER_STREAM, message_id)
-
-    # Reset run status back to pending
+    # Re-enqueue via Taskiq so it goes through the normal pipeline
     if "payload" in fields:
+        from taskiq import TaskiqMessage
+
         payload = orjson.loads(fields["payload"])
-        run_id = payload.get("run_id")
+        run_id = payload.get("run_id", "")
+
+        msg = TaskiqMessage(
+            task_id=run_id,
+            task_name="handle_run",
+            labels={},
+            args=[],
+            kwargs=payload,
+        )
+        await task_broker.kick(msg)
+
+        # Remove from dead-letter stream
+        await redis.xdel(DEAD_LETTER_STREAM, message_id)
+
+        # Reset run status back to pending
         if run_id:
             run_repo = RunRepository(db)
             await run_repo.update_status(UUID(run_id), "pending")
