@@ -66,8 +66,15 @@ src/langrove/
 # Development
 uv sync                              # Install dependencies
 uv run langrove serve              # Start API server (port 8123)
-uv run langrove worker             # Start background worker
+uv run langrove worker             # Start background worker (all queues, 5 threads)
 docker compose up postgres redis     # Start infra only
+
+# Worker — Dramatiq-native flags
+uv run langrove worker -Q langrove               # Listen on specific queue
+uv run langrove worker -t 10                     # 10 worker threads (--concurrency)
+uv run langrove worker --max-retries 5           # 5 attempts before dead-letter
+uv run langrove worker --worker-timeout 1000     # Idle-poll interval 1 s (ms)
+uv run langrove worker --worker-id worker-1 -t 10 --shutdown-timeout 60
 
 # Testing
 uv run pytest                        # Run all tests

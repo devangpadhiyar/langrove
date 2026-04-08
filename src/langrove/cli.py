@@ -69,18 +69,50 @@ def serve(
 
 
 @main.command()
-@click.option("--worker-id", default=None, help="Unique worker identifier")
+@click.option("--worker-id", default=None, help="Unique worker identifier (logged at startup)")
+# ── Dramatiq-native parameters ──────────────────────────────────────────────
 @click.option(
-    "--concurrency", default=None, type=int, help="Max concurrent tasks per worker (default: 5)"
+    "--queues",
+    "-Q",
+    multiple=True,
+    metavar="QUEUE",
+    help=(
+        "Queue name(s) to process.  Repeat the flag to listen on multiple queues: "
+        "-Q langrove -Q priority.  Default: all registered queues."
+    ),
 )
 @click.option(
-    "--task-timeout", default=None, type=int, help="Task timeout in seconds (default: 900)"
+    "--concurrency",
+    "-t",
+    default=None,
+    type=int,
+    help="Number of worker threads (Dramatiq --threads).  Default: 5.",
+)
+@click.option(
+    "--max-retries",
+    default=None,
+    type=int,
+    help="Max delivery attempts before a message is dead-lettered (default: 3).",
+)
+@click.option(
+    "--worker-timeout",
+    default=None,
+    type=int,
+    metavar="MS",
+    help=(
+        "Milliseconds worker threads wait for new messages when idle "
+        "(Dramatiq worker_timeout).  Default: 5000."
+    ),
+)
+# ── Timeout / pool parameters ────────────────────────────────────────────────
+@click.option(
+    "--task-timeout", default=None, type=int, help="Task timeout in seconds (default: 900)."
 )
 @click.option(
     "--shutdown-timeout",
     default=None,
     type=int,
-    help="Graceful shutdown timeout in seconds (default: 30)",
+    help="Graceful drain timeout in seconds before force-stop (default: 30).",
 )
 @click.option("--db-pool-min-size", default=None, type=int, help="Min DB connections (default: 2)")
 @click.option(
@@ -94,14 +126,25 @@ def serve(
 )
 def worker(
     worker_id: str | None,
+    queues: tuple[str, ...],
     concurrency: int | None,
+    max_retries: int | None,
+    worker_timeout: int | None,
     task_timeout: int | None,
     shutdown_timeout: int | None,
     db_pool_min_size: int | None,
     db_pool_max_size: int | None,
     log_level: str,
 ):
-    """Start a background run worker."""
+    """Start a background run worker (Dramatiq / Redis).
+
+    \b
+    Dramatiq-native flags mirror the upstream dramatiq CLI:
+      -Q / --queues        filter queues to consume (-Q q1 -Q q2)
+      -t / --concurrency   worker thread count (Dramatiq --threads)
+      --max-retries        delivery attempts before dead-letter
+      --worker-timeout     idle-poll interval in ms (Dramatiq worker_timeout)
+    """
     import asyncio
     import os
 
@@ -109,9 +152,13 @@ def worker(
 
     _setup_logging(log_level)
 
-    # CLI flags override env vars (Settings reads from env)
+    # CLI flags override env vars (Settings reads from env at import time)
     if concurrency is not None:
         os.environ["LANGROVE_WORKER_CONCURRENCY"] = str(concurrency)
+    if max_retries is not None:
+        os.environ["LANGROVE_MAX_DELIVERY_ATTEMPTS"] = str(max_retries)
+    if worker_timeout is not None:
+        os.environ["LANGROVE_WORKER_TIMEOUT_MS"] = str(worker_timeout)
     if task_timeout is not None:
         os.environ["LANGROVE_TASK_TIMEOUT_SECONDS"] = str(task_timeout)
     if shutdown_timeout is not None:
@@ -121,7 +168,7 @@ def worker(
     if db_pool_max_size is not None:
         os.environ["LANGROVE_DB_POOL_MAX_SIZE"] = str(db_pool_max_size)
 
-    asyncio.run(run_worker(worker_id))
+    asyncio.run(run_worker(worker_id, queues=list(queues) if queues else None))
 
 
 @main.command()

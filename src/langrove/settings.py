@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     # Worker
     worker_concurrency: int = 5
+    worker_timeout_ms: int = 5000  # ms worker threads wait for messages (Dramatiq default)
     task_timeout_seconds: int = 900
     max_delivery_attempts: int = 3
     shutdown_timeout_seconds: int = 30

@@ -107,9 +107,25 @@ This works with any task queue library — Dramatiq has no involvement in the ca
 - With `AsyncIO` middleware, all async actors share one event loop: effective async concurrency = `worker_threads`
 
 ## CLI Options (`langrove worker`)
+
+### Identification
 - `--worker-id ID` — logged at startup for process identification (default: "worker-default")
-- `--concurrency N` — overrides `LANGROVE_WORKER_CONCURRENCY` (default: 5)
-- `--task-timeout N` — task timeout in seconds, overrides `LANGROVE_TASK_TIMEOUT_SECONDS` (default: 900)
+
+### Dramatiq-native flags (mirror upstream `dramatiq` CLI)
+| CLI flag | Short | Dramatiq param | Env var | Default |
+|---|---|---|---|---|
+| `--queues QUEUE` | `-Q` | `Worker(queues=[...])` | — | all queues |
+| `--concurrency N` | `-t` | `Worker(worker_threads=N)` | `LANGROVE_WORKER_CONCURRENCY` | 5 |
+| `--max-retries N` | — | `Retries(max_retries=N)` | `LANGROVE_MAX_DELIVERY_ATTEMPTS` | 3 |
+| `--worker-timeout MS` | — | `Worker(worker_timeout=MS)` | `LANGROVE_WORKER_TIMEOUT_MS` | 5000 |
+
+- `--queues` is repeatable: `-Q langrove -Q priority` → worker listens on both queues
+- `--concurrency` short form `-t` matches Dramatiq's own `dramatiq --threads` flag
+- `--max-retries` maps to `max_delivery_attempts` in settings — controls when `DeadLetterMiddleware` fires
+- `--worker-timeout` is the idle-poll interval: how long each thread blocks waiting for a new message before looping
+
+### Timeout / pool flags
+- `--task-timeout N` — per-task execution timeout in seconds (kills actor via `TimeLimit` middleware), overrides `LANGROVE_TASK_TIMEOUT_SECONDS` (default: 900)
 - `--shutdown-timeout N` — graceful drain timeout in seconds, overrides `LANGROVE_SHUTDOWN_TIMEOUT_SECONDS` (default: 30)
 - `--db-pool-min-size` / `--db-pool-max-size` — asyncpg pool bounds for worker DB connections
 

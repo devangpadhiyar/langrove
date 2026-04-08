@@ -17,7 +17,10 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-async def run_worker(worker_id: str | None = None):
+async def run_worker(
+    worker_id: str | None = None,
+    queues: list[str] | None = None,
+):
     """Main entry point for the Dramatiq worker process."""
     from dotenv import load_dotenv
 
@@ -37,7 +40,11 @@ async def run_worker(worker_id: str | None = None):
         os.environ.update(config.env)
 
     effective_id = worker_id or "worker-default"
-    logger.info("Langrove Worker starting worker_id=%s (Dramatiq / Redis)...", effective_id)
+    logger.info(
+        "Langrove Worker starting worker_id=%s queues=%s (Dramatiq / Redis)...",
+        effective_id,
+        queues or "all",
+    )
 
     # 1. Set up the global Dramatiq broker BEFORE importing tasks so that the
     #    @dramatiq.actor decorator attaches to the correct broker instance.
@@ -59,7 +66,12 @@ async def run_worker(worker_id: str | None = None):
     #    at a time. With AsyncIO middleware, all async actors share one event
     #    loop, so effective async concurrency = worker_threads.
     broker = dramatiq.get_broker()
-    worker = dramatiq.Worker(broker, worker_threads=settings.worker_concurrency)
+    worker = dramatiq.Worker(
+        broker,
+        queues=queues or None,  # None → process all registered queues
+        worker_threads=settings.worker_concurrency,
+        worker_timeout=settings.worker_timeout_ms,
+    )
 
     # --- Graceful shutdown via SIGTERM/SIGINT (two-phase) ---
     # First signal: stop accepting new tasks, wait for in-flight to finish.
@@ -83,9 +95,11 @@ async def run_worker(worker_id: str | None = None):
 
     worker.start()
     logger.info(
-        "Worker ready worker_id=%s (threads=%d). Waiting for tasks...",
+        "Worker ready worker_id=%s (threads=%d, worker_timeout=%dms, queues=%s). Waiting for tasks...",
         effective_id,
         settings.worker_concurrency,
+        settings.worker_timeout_ms,
+        queues or "all",
     )
 
     try:
