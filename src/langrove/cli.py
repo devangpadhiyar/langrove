@@ -7,9 +7,6 @@ from pathlib import Path
 
 import click
 
-# Default config file names searched in order
-_CONFIG_FILENAMES = ("langgraph.json", "aegra.json")
-
 
 def _load_dotenv_from_config(config_path: str) -> None:
     """Parse langgraph.json and load the .env it specifies.
