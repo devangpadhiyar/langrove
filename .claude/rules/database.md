@@ -54,3 +54,5 @@ globs:
 - Pool acquisition: `async with self.pool.acquire() as conn` — single connection per query
 - All `fetch_*` methods return dicts via `dict(row)` conversion from asyncpg.Record
 - 2026-04-07: Checkpointer pool is psycopg (not asyncpg) — uses `%s` placeholders, acquired via `async with checkpointer.conn.connection() as conn`. The `$N` asyncpg convention applies only to the app-level `DatabasePool`, not the checkpointer/store psycopg pools.
+- 2026-04-09: When writing Alembic downgrade paths that recreate indexes, list the exact column names explicitly rather than inferring from index name via `split("_")[-1]` — the inference is fragile (e.g. `idx_runs_thread_id.split("_")[-1]` → `"id"` not `"thread_id"`).
+- 2026-04-09: Startup schema check uses SQLAlchemy (not asyncpg) for Alembic compatibility — wrap in `asyncio.to_thread` to avoid blocking the async lifespan. Skip silently if `alembic.ini` not found (wheel installs without migration tooling).
