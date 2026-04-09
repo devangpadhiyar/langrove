@@ -43,7 +43,7 @@ def _get_service(
         thread_repo=ThreadRepository(db),
         assistant_repo=AssistantRepository(db),
         executor=RunExecutor(registry, checkpointer, store=store),
-        publisher=TaskPublisher(redis),
+        publisher=TaskPublisher(),
         redis=redis,
     )
 

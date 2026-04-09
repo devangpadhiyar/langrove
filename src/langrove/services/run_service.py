@@ -214,12 +214,19 @@ class RunService:
     async def cancel_run(self, run_id: UUID) -> None:
         """Cancel a run: update DB, signal worker via Redis key, reset thread."""
         row = await self._runs.get(run_id)
-        # 1. DB write first — authoritative state before the worker can check
+        # 1. DB write first -- authoritative state before the worker can check
         await self._runs.update_status(run_id, "interrupted")
-        # 2. Set cancel key — worker polls this between events
+        # 2. Revoke the Celery task if it's still queued (not yet started)
+        try:
+            from langrove.queue.celery_app import app as celery_app
+
+            celery_app.control.revoke(str(run_id), terminate=False)
+        except Exception:
+            pass
+        # 3. Set cancel key -- worker polls this between events for running tasks
         if self._redis is not None:
             await self._redis.set(f"langrove:runs:{run_id}:cancel", "1", ex=3600)
-        # 3. Reset thread immediately — caller expects idle after 204
+        # 4. Reset thread immediately -- caller expects idle after 204
         thread_id = row.get("thread_id")
         if thread_id:
             await self._threads.set_status(thread_id, "idle")

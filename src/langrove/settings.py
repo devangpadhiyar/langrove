@@ -25,12 +25,11 @@ class Settings(BaseSettings):
     store_pool_max_size: int = 5
 
     # Worker
-    worker_id: str = "worker-1"
     worker_concurrency: int = 5
-    recovery_interval_seconds: int = 30
     task_timeout_seconds: int = 900
     max_delivery_attempts: int = 3
     shutdown_timeout_seconds: int = 30
+    queue_name: str = "langrove"
 
     # Event stream cleanup
     event_stream_ttl_seconds: int = 86400

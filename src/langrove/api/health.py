@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from fastapi import APIRouter, Request
 
 router = APIRouter()
@@ -53,47 +55,25 @@ async def info(request: Request):
 async def metrics(request: Request):
     """Queue metrics for monitoring and autoscaling (HPA).
 
-    Returns task queue depth, pending count, dead-letter depth,
-    and per-consumer stats.
+    Returns Celery queue length and dead-letter depth.
     """
-    from langrove.queue.consumer import CONSUMER_GROUP, DEAD_LETTER_STREAM
-    from langrove.queue.publisher import TASK_STREAM
+    from langrove.queue.celery_app import DEAD_LETTER_STREAM
+    from langrove.settings import Settings
 
+    settings = Settings()
     redis = request.app.state.redis
     result: dict = {
         "queue_length": 0,
-        "pending_total": 0,
         "dead_letter_length": 0,
-        "consumers": [],
     }
 
-    # Queue depth
-    try:
-        stream_info = await redis.xinfo_stream(TASK_STREAM)
-        result["queue_length"] = stream_info.get("length", 0)
-    except Exception:
-        pass
+    # Celery uses a Redis list for the queue (key = queue name)
+    with contextlib.suppress(Exception):
+        result["queue_length"] = await redis.llen(settings.queue_name)
 
-    # Pending tasks and per-consumer stats
-    try:
-        group_info = await redis.xinfo_groups(TASK_STREAM)
-        result["pending_total"] = sum(g.get("pending", 0) for g in group_info)
-        for g in group_info:
-            if g.get("name") != CONSUMER_GROUP:
-                continue
-            consumer_info = await redis.xinfo_consumers(TASK_STREAM, CONSUMER_GROUP)
-            result["consumers"] = [
-                {"name": c["name"], "pending": c["pending"], "idle": c["idle"]}
-                for c in consumer_info
-            ]
-    except Exception:
-        pass
-
-    # Dead-letter depth
-    try:
+    # Dead-letter depth (still a Redis Stream)
+    with contextlib.suppress(Exception):
         dl_info = await redis.xinfo_stream(DEAD_LETTER_STREAM)
         result["dead_letter_length"] = dl_info.get("length", 0)
-    except Exception:
-        pass
 
     return result
