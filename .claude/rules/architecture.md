@@ -19,7 +19,7 @@ globs:
 
 ## App Factory (app.py)
 - `create_app()` with `@asynccontextmanager` for async lifespan
-- **Startup order:** load .env → asyncpg pool → Redis → load graphs → setup checkpointer (psycopg) → setup store (psycopg) → auto-create assistants
+- **Startup order:** (CLI loads .env first) → asyncpg pool → Redis → load graphs → setup checkpointer (psycopg) → setup store (psycopg) → auto-create assistants
 - **Shutdown:** close all pools (checkpointer, store, db, redis)
 - State on `app.state`: `db_pool`, `redis`, `graph_registry`, `checkpointer`, `store`, `settings`, `config`
 
@@ -54,6 +54,9 @@ globs:
 - `langrove serve` — FastAPI via uvicorn (default port 8123)
 - `langrove worker` — Redis Streams consumer + recovery monitor
 - `langrove init` — scaffold langgraph.json + agent.py
+- Both `serve` and `worker` accept `--config` to point at a non-default `langgraph.json`
+- `.env` loading happens in `_load_dotenv_from_config()` at CLI layer, before any langrove module import — this ensures module-level `Settings()` singletons (e.g. Celery app) see the correct env vars
+- 2026-04-09: `.env` must be loaded at CLI level (not app factory) so Celery's module-level Settings() singleton picks it up; loading in app.py is too late
 
 ## Settings (settings.py)
 - Pydantic BaseSettings with `env_prefix="LANGROVE_"` and `.env` file support

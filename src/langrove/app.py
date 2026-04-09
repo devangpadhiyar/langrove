@@ -29,20 +29,8 @@ from langrove.settings import Settings
 
 def create_app(settings: Settings | None = None, config: GraphConfig | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
-    from dotenv import load_dotenv
-
     settings = settings or Settings()
     config = config or load_config(settings.config_path)
-
-    # Load the .env specified in langgraph.json (defaults to ".env")
-    # Resolved relative to the config file's directory
-    if isinstance(config.env, str):
-        env_path = Path(settings.config_path).parent / config.env
-        load_dotenv(env_path, override=True)
-    elif isinstance(config.env, dict):
-        import os
-
-        os.environ.update(config.env)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

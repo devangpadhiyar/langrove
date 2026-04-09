@@ -3,8 +3,47 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import click
+
+# Default config file names searched in order
+_CONFIG_FILENAMES = ("langgraph.json", "aegra.json")
+
+
+def _load_dotenv_from_config(config_path: str) -> None:
+    """Parse langgraph.json and load the .env it specifies.
+
+    Must be called before any langrove module is imported so that
+    module-level Settings() singletons (e.g. in queue/celery_app.py)
+    pick up the correct environment variables.
+
+    Silently skips if the config file is absent or has no ``env`` field.
+    """
+    import json
+
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return  # python-dotenv not installed — nothing to do
+
+    path = Path(config_path)
+    if not path.exists():
+        return
+
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return
+
+    env_field = data.get("env", ".env")
+    if isinstance(env_field, str):
+        env_path = path.parent / env_field
+        load_dotenv(env_path, override=True)
+    elif isinstance(env_field, dict):
+        import os
+
+        os.environ.update(env_field)
 
 
 def _setup_logging(level: str = "INFO") -> None:
@@ -28,6 +67,13 @@ def main():
 @click.option("--host", default="0.0.0.0", help="Bind host")
 @click.option("--port", default=8123, type=int, help="Bind port")
 @click.option("--reload", is_flag=True, help="Enable auto-reload for development")
+@click.option(
+    "--config",
+    "config_path",
+    default="langgraph.json",
+    show_default=True,
+    help="Path to langgraph.json config file.",
+)
 @click.option("--db-pool-min-size", default=None, type=int, help="Min DB connections (default: 2)")
 @click.option(
     "--db-pool-max-size", default=None, type=int, help="Max DB connections (default: 10)"
@@ -42,6 +88,7 @@ def serve(
     host: str,
     port: int,
     reload: bool,
+    config_path: str,
     db_pool_min_size: int | None,
     db_pool_max_size: int | None,
     log_level: str,
@@ -51,6 +98,7 @@ def serve(
 
     import uvicorn
 
+    _load_dotenv_from_config(config_path)
     _setup_logging(log_level)
 
     if db_pool_min_size is not None:
@@ -102,6 +150,13 @@ def serve(
     type=int,
     help="Graceful shutdown timeout in seconds (default: 30).",
 )
+@click.option(
+    "--config",
+    "config_path",
+    default="langgraph.json",
+    show_default=True,
+    help="Path to langgraph.json config file.",
+)
 @click.option("--db-pool-min-size", default=None, type=int, help="Min DB connections (default: 2)")
 @click.option(
     "--db-pool-max-size", default=None, type=int, help="Max DB connections (default: 10)"
@@ -119,12 +174,15 @@ def worker(
     max_retries: int | None,
     task_timeout: int | None,
     shutdown_timeout: int | None,
+    config_path: str,
     db_pool_min_size: int | None,
     db_pool_max_size: int | None,
     log_level: str,
 ):
     """Start a background run worker (Celery / AsyncIO pool)."""
     import os
+
+    _load_dotenv_from_config(config_path)
 
     from langrove.worker import run_worker
 
