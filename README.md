@@ -115,17 +115,58 @@ async for event in client.runs.stream(
 
 ### Environment Variables
 
+All variables use the `LANGROVE_` prefix and are optional — every one has a sensible default.
+
+**Infrastructure**
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `postgresql://langrove:langrove@localhost:5432/langrove` | PostgreSQL connection string |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection string |
-| `HOST` | `0.0.0.0` | Server bind address |
-| `PORT` | `8123` | Server port |
-| `WORKER_ID` | `worker-1` | Unique worker identifier |
-| `RECOVERY_INTERVAL_SECONDS` | `30` | Crash recovery check interval |
-| `TASK_TIMEOUT_SECONDS` | `60` | Max task execution time |
-| `MAX_DELIVERY_ATTEMPTS` | `3` | Retries before dead-letter |
-| `CONFIG_PATH` | `langgraph.json` | Path to config file |
+| `LANGROVE_DATABASE_URL` | `postgresql://langrove:langrove@localhost:5432/langrove` | asyncpg connection string |
+| `LANGROVE_REDIS_URL` | `redis://localhost:6379` | Redis URL for queue and pub/sub |
+
+**Server**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LANGROVE_HOST` | `0.0.0.0` | Bind address |
+| `LANGROVE_PORT` | `8123` | Bind port |
+| `LANGROVE_CONFIG_PATH` | `langgraph.json` | Path to `langgraph.json` |
+
+**Connection pools**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LANGROVE_DB_POOL_MIN_SIZE` | `2` | Min asyncpg connections (app queries) |
+| `LANGROVE_DB_POOL_MAX_SIZE` | `10` | Max asyncpg connections (app queries) |
+| `LANGROVE_CHECKPOINTER_POOL_MAX_SIZE` | `5` | Max psycopg connections (checkpointer) |
+| `LANGROVE_STORE_POOL_MAX_SIZE` | `5` | Max psycopg connections (store) |
+
+**Worker**
+
+| Variable | Default | CLI flag | Description |
+|----------|---------|----------|-------------|
+| `LANGROVE_WORKER_CONCURRENCY` | `5` | `-t/--concurrency` | Concurrent async tasks per worker |
+| `LANGROVE_TASK_TIMEOUT_SECONDS` | `900` | `--task-timeout` | Max task execution time (seconds) |
+| `LANGROVE_MAX_DELIVERY_ATTEMPTS` | `3` | `--max-retries` | Retries before dead-letter |
+| `LANGROVE_SHUTDOWN_TIMEOUT_SECONDS` | `30` | `--shutdown-timeout` | Graceful shutdown wait (seconds) |
+| `LANGROVE_QUEUE_NAME` | `langrove` | `-Q/--queues` | Redis queue name |
+
+**Events**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LANGROVE_EVENT_STREAM_TTL_SECONDS` | `86400` | SSE event retention in Redis (24 hours) |
+
+**Loading order** (last wins): system env → `langgraph.json` `env` field → CLI flags.
+
+The `env` field in `langgraph.json` accepts either a path to a `.env` file (resolved relative to the config file) or an inline dict:
+
+```jsonc
+{
+  "env": ".env"
+  // or: "env": { "LANGROVE_DATABASE_URL": "postgresql://..." }
+}
+```
 
 ## API Reference
 
@@ -313,9 +354,9 @@ The `docker-compose.yml` includes API server, worker, PostgreSQL (pgvector), and
 ## CLI Reference
 
 ```bash
-langrove serve [--host 0.0.0.0] [--port 8123] [--reload]   # Start API server
-langrove worker [--worker-id my-worker]                      # Start background worker
-langrove init [--template chatbot]                           # Scaffold new project
+langrove serve [--host 0.0.0.0] [--port 8123] [--reload]
+langrove worker [--worker-id ID] [-t CONCURRENCY] [--task-timeout SECS] [--max-retries N] [--shutdown-timeout SECS] [-Q QUEUE]
+langrove init [--template chatbot]
 ```
 
 ## Examples
