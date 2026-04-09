@@ -84,7 +84,7 @@ async def run_worker(
         if shutdown_event.is_set():
             force_quit = True
             logger.warning("Force quit — stopping worker immediately.")
-            worker.stop(join=False)
+            worker.stop(timeout=0)  # timeout=0 → joins threads with 0 s wait (returns immediately)
         else:
             logger.info("Worker shutting down gracefully (signal again to force)...")
             shutdown_event.set()
@@ -110,18 +110,12 @@ async def run_worker(
             "Stopping worker, draining in-flight tasks (timeout=%ds)...",
             settings.shutdown_timeout_seconds,
         )
-        # stop(join=True) blocks until all in-flight messages finish; run in executor
-        # to avoid blocking the event loop, with a configurable drain timeout.
-        try:
-            await asyncio.wait_for(
-                asyncio.get_running_loop().run_in_executor(None, lambda: worker.stop(join=True)),
-                timeout=settings.shutdown_timeout_seconds,
-            )
-        except TimeoutError:
-            logger.warning(
-                "Graceful shutdown timed out after %ds — forcing stop.",
-                settings.shutdown_timeout_seconds,
-            )
-            worker.stop(join=False)
+        # Worker.stop(timeout=ms) joins every consumer + worker thread with
+        # that per-thread timeout, then returns.  Run in executor so the
+        # asyncio event loop stays unblocked during the drain.
+        await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: worker.stop(timeout=settings.shutdown_timeout_seconds * 1000),
+        )
     finally:
         logger.info("Worker stopped.")

@@ -98,10 +98,11 @@ This works with any task queue library — Dramatiq has no involvement in the ca
 - `/dead-letter/{id}/retry` re-enqueues via `asyncio.to_thread(handle_run.send_with_options, kwargs=payload)`
 
 ## Graceful Shutdown (Two-Phase)
-1. **First SIGTERM:** sets `shutdown_event`; worker drains in-flight via `worker.stop(join=True)` in executor (timeout = `settings.shutdown_timeout_seconds`, default 30s)
-2. **Drain timeout exceeded:** `asyncio.wait_for` raises `TimeoutError`; falls back to `worker.stop(join=False)` immediately
-3. **Second SIGTERM (before drain completes):** sets `force_quit`; calls `worker.stop(join=False)` immediately
-4. Cleanup: worker threads exit; lazy `_state` resources (DB, Redis pools) are not explicitly closed on shutdown (process exit handles them)
+1. **First SIGTERM:** sets `shutdown_event`; calls `worker.stop(timeout=shutdown_timeout_seconds * 1000)` in an executor — Dramatiq joins every consumer + worker thread with that per-thread timeout, then returns
+2. **Second SIGTERM (before drain completes):** sets `force_quit`; calls `worker.stop(timeout=0)` — joins threads with a 0 ms wait (returns immediately, abandons in-flight tasks)
+3. Cleanup: worker threads exit; lazy `_state` resources (DB, Redis pools) are not explicitly closed on shutdown (process exit handles them)
+
+`Worker.stop(timeout=ms)` is Dramatiq's native API — the `timeout` argument is passed directly to each `thread.join()`.  No `asyncio.wait_for` wrapper is needed.
 
 ## Worker Concurrency
 - `dramatiq.Worker(broker, worker_threads=settings.worker_concurrency)` — default 5 threads
