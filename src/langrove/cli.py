@@ -203,6 +203,51 @@ def worker(
 
 
 @main.command()
+@click.option(
+    "--config",
+    "config_path",
+    default="langgraph.json",
+    show_default=True,
+    help="Path to langgraph.json config file.",
+)
+@click.option("--revision", default="head", show_default=True, help="Target revision.")
+def migrate(config_path: str, revision: str):
+    """Run database migrations (alembic upgrade)."""
+    import sys
+
+    _load_dotenv_from_config(config_path)
+    _setup_logging()
+
+    # Locate the migrations directory bundled with the package
+    from pathlib import Path
+
+    migrations_dir = Path(__file__).parent / "migrations"
+    alembic_ini = Path(__file__).parent.parent.parent / "alembic.ini"
+    if not alembic_ini.exists():
+        # Fallback: look relative to cwd (editable install / dev mode)
+        alembic_ini = Path("alembic.ini")
+
+    if not alembic_ini.exists():
+        click.echo(
+            "ERROR: alembic.ini not found. Run this command from the project root.", err=True
+        )
+        sys.exit(1)
+
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_cfg = Config(str(alembic_ini))
+    alembic_cfg.set_main_option("script_location", str(migrations_dir))
+
+    try:
+        command.upgrade(alembic_cfg, revision)
+        click.echo(f"Migrations applied up to: {revision}")
+    except Exception as exc:
+        click.echo(f"ERROR: Migration failed — {exc}", err=True)
+        sys.exit(1)
+
+
+@main.command()
 @click.option("--template", default="chatbot", help="Project template")
 def init(template: str):
     """Initialize a new Langrove project."""
@@ -245,6 +290,7 @@ def init(template: str):
 
     click.echo("\nNext steps:")
     click.echo("  docker compose up -d postgres redis")
+    click.echo("  uv run langrove migrate")
     click.echo("  uv run langrove serve")
 
 

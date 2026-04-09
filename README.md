@@ -32,7 +32,7 @@ uv sync
 docker compose up postgres redis -d
 
 # 3. Run migrations
-uv run alembic upgrade head
+uv run langrove migrate
 
 # 4. Initialize a project (creates langgraph.json + agent.py)
 uv run langrove init
@@ -412,7 +412,7 @@ uv run ruff format .
 uv run pytest
 
 # Run migrations
-uv run alembic upgrade head
+uv run langrove migrate
 ```
 
 ## Autonomous Development (AI-Assisted)

@@ -20,7 +20,7 @@ class StoreRepository:
         """Upsert a store item."""
         await self._db.execute(
             """
-            INSERT INTO store_items (namespace, key, value, updated_at)
+            INSERT INTO langrove_store_items (namespace, key, value, updated_at)
             VALUES ($1, $2, $3::jsonb, NOW())
             ON CONFLICT (namespace, key)
             DO UPDATE SET value = $3::jsonb, updated_at = NOW()
@@ -33,7 +33,7 @@ class StoreRepository:
     async def get(self, namespace: list[str], key: str) -> dict | None:
         """Get a store item by namespace + key."""
         row = await self._db.fetch_one(
-            "SELECT * FROM store_items WHERE namespace = $1 AND key = $2",
+            "SELECT * FROM langrove_store_items WHERE namespace = $1 AND key = $2",
             namespace,
             key,
         )
@@ -42,7 +42,7 @@ class StoreRepository:
     async def delete(self, namespace: list[str], key: str) -> None:
         """Delete a store item."""
         result = await self._db.execute(
-            "DELETE FROM store_items WHERE namespace = $1 AND key = $2",
+            "DELETE FROM langrove_store_items WHERE namespace = $1 AND key = $2",
             namespace,
             key,
         )
@@ -76,7 +76,7 @@ class StoreRepository:
         args.extend([limit, offset])
 
         rows = await self._db.fetch_all(
-            f"SELECT * FROM store_items {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
+            f"SELECT * FROM langrove_store_items {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
             *args,
         )
         return [dict(r) for r in rows]
@@ -107,7 +107,7 @@ class StoreRepository:
         args.extend([limit, offset])
 
         rows = await self._db.fetch_all(
-            f"SELECT {select} as namespace FROM store_items {where} LIMIT ${idx} OFFSET ${idx + 1}",
+            f"SELECT {select} as namespace FROM langrove_store_items {where} LIMIT ${idx} OFFSET ${idx + 1}",
             *args,
         )
         return [r["namespace"] for r in rows]

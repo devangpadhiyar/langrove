@@ -75,7 +75,7 @@ uv run pytest tests/test_runs.py     # Run specific test file
 uv run pytest -x -v                  # Stop on first failure, verbose
 
 # Database
-uv run alembic upgrade head          # Run migrations
+uv run langrove migrate              # Run migrations
 uv run alembic revision -m "desc"    # Create new migration
 ```
 

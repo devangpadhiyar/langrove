@@ -78,3 +78,73 @@ class TestLoadDotenvFromConfig:
 
         # Should not raise even if .env file is absent
         _load_dotenv_from_config(str(config_file))
+
+
+class TestMigrateCommand:
+    """Tests for the `langrove migrate` CLI command."""
+
+    def test_migrate_command_registered(self):
+        from click.testing import CliRunner
+
+        from langrove.cli import main
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["migrate", "--help"])
+        assert result.exit_code == 0
+        assert (
+            "migration" in result.output.lower()
+            or "alembic" in result.output.lower()
+            or "revision" in result.output.lower()
+        )
+
+    def test_migrate_exits_when_alembic_ini_missing(self, tmp_path: Path, monkeypatch):
+        """migrate exits with code 1 when alembic.ini cannot be found."""
+        from pathlib import Path as _Path
+
+        from click.testing import CliRunner
+
+        from langrove.cli import main
+
+        # Patch Path.exists to always return False for alembic.ini lookups
+        original_exists = _Path.exists
+
+        def patched_exists(self):
+            if "alembic.ini" in str(self):
+                return False
+            return original_exists(self)
+
+        monkeypatch.setattr(_Path, "exists", patched_exists)
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["migrate"])
+        assert result.exit_code == 1
+        assert "alembic.ini" in result.output
+
+    def test_migrate_success(self, tmp_path: Path, monkeypatch):
+        """migrate succeeds when alembic.ini exists and alembic.command.upgrade succeeds."""
+        from pathlib import Path as _Path
+        from unittest.mock import patch
+
+        from click.testing import CliRunner
+
+        from langrove.cli import main
+
+        # Make alembic.ini appear to exist
+        original_exists = _Path.exists
+
+        def patched_exists(self):
+            if "alembic.ini" in str(self):
+                return True
+            return original_exists(self)
+
+        monkeypatch.setattr(_Path, "exists", patched_exists)
+
+        with (
+            patch("alembic.command.upgrade"),
+            patch("alembic.config.Config.__init__", return_value=None),
+            patch("alembic.config.Config.set_main_option"),
+        ):
+            runner = CliRunner()
+            result = runner.invoke(main, ["migrate"])
+            assert result.exit_code == 0
+            assert "head" in result.output
