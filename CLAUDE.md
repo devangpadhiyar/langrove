@@ -6,9 +6,9 @@ Works with `langgraph_sdk.get_client()`, `useStream()` React hook, and Agent Cha
 ## Architecture
 
 - **API Server** (FastAPI/uvicorn): HTTP endpoints, SSE streaming for foreground runs
-- **Worker Process**: Consumes background tasks from Redis Streams, executes LangGraph graphs
+- **Worker Process**: Celery with celery-aio-pool (AsyncIOPool) for async task execution
 - **PostgreSQL**: Threads, runs, assistants, store + LangGraph checkpoint tables
-- **Redis**: Task queue (Streams + consumer groups), live stream relay (Pub/Sub), event replay
+- **Redis**: Task queue (Celery broker), live stream relay (Pub/Sub), event replay
 
 ## Key Patterns
 
@@ -28,13 +28,14 @@ data: null
 ```
 Content-Type: text/event-stream. First event always `metadata`, last always `end`.
 
-### Background Runs (Redis Streams + Late-Ack)
-1. API: XADD task to stream
-2. Worker: XREADGROUP (enters Pending Entries List)
-3. Worker: execute graph, publish events via pub/sub
-4. Worker: XACK only after success (late acknowledgment)
-5. On crash: XAUTOCLAIM reclaims after 60s
-6. Poison messages (>3 attempts): dead-letter stream
+### Background Runs (Celery + Late-Ack)
+1. API: `TaskPublisher.publish()` calls `handle_run.apply_async(kwargs=payload)` via thread pool
+2. Celery worker picks up task from Redis queue (celery-aio-pool provides AsyncIOPool)
+3. Worker: execute graph, publish events via Redis pub/sub
+4. Worker: Celery ACKs only after task completes (`task_acks_late=True`)
+5. On crash: `task_reject_on_worker_lost=True` re-queues the task
+6. After max retries (default 3): dead-letter to `langrove:tasks:dead` Redis stream
+7. Cancellation: API sets `langrove:runs:{run_id}:cancel` key + `app.control.revoke()`
 
 ### Thread State
 Thread `values` and `interrupts` are NOT stored in the threads table. They are derived from the LangGraph checkpointer at read time.
@@ -53,7 +54,7 @@ src/langrove/
   services/       - Business logic (one class per domain)
   graph/          - Graph loading + registry
   streaming/      - SSE executor, formatter, broker
-  queue/          - Redis Streams publisher, consumer, recovery
+  queue/          - Celery app (celery_app.py), task actors (tasks.py), publisher (publisher.py)
   auth/           - Auth handlers + middleware
   api/            - FastAPI route handlers (thin, delegate to services)
   worker.py       - Worker process main loop

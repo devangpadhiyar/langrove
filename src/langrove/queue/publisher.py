@@ -1,19 +1,18 @@
-"""Task publisher -- adds background run tasks to Redis Streams."""
+"""Task publisher -- enqueues background run tasks via Celery."""
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
-
-import orjson
-
-TASK_STREAM = "langrove:tasks"
 
 
 class TaskPublisher:
-    """Publishes background run tasks to Redis Streams via XADD."""
+    """Publishes background run tasks to the Celery queue.
 
-    def __init__(self, redis: Any):
-        self._redis = redis
+    Uses the run_id as the Celery task_id for easy cancellation lookup.
+    apply_async is synchronous (Redis LPUSH); asyncio.to_thread keeps the
+    API event loop non-blocking.
+    """
 
     async def publish(
         self,
@@ -33,10 +32,11 @@ class TaskPublisher:
         metadata: dict[str, Any] | None = None,
         auth_user: dict[str, Any] | None = None,
     ) -> str:
-        """Publish a task to the Redis Stream.
+        """Enqueue a background run task. Returns the run_id."""
+        from langrove.queue.tasks import handle_run
+        from langrove.settings import Settings
 
-        Returns the stream message ID.
-        """
+        settings = Settings()
         payload = {
             "run_id": run_id,
             "thread_id": thread_id,
@@ -53,9 +53,11 @@ class TaskPublisher:
             "metadata": metadata or {},
             "auth_user": auth_user,
         }
-
-        message_id = await self._redis.xadd(
-            TASK_STREAM,
-            {"payload": orjson.dumps(payload).decode()},
+        # apply_async is synchronous (Redis LPUSH); run in thread pool
+        await asyncio.to_thread(
+            handle_run.apply_async,
+            kwargs=payload,
+            task_id=run_id,  # task_id == run_id for easy cancellation
+            queue=settings.queue_name,
         )
-        return message_id
+        return run_id

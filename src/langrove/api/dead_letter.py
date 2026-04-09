@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID
 
 import orjson
@@ -12,8 +13,7 @@ from langrove.api.deps import get_db, get_redis
 from langrove.db.pool import DatabasePool
 from langrove.db.run_repo import RunRepository
 from langrove.exceptions import NotFoundError
-from langrove.queue.consumer import DEAD_LETTER_STREAM
-from langrove.queue.publisher import TASK_STREAM
+from langrove.queue.celery_app import DEAD_LETTER_STREAM
 
 router = APIRouter(prefix="/dead-letter", tags=["dead-letter"])
 
@@ -57,21 +57,30 @@ async def retry_dead_letter(
     redis=Depends(get_redis),
     db: DatabasePool = Depends(get_db),
 ):
-    """Re-publish a dead-lettered task for retry."""
+    """Re-enqueue a dead-lettered task via the Celery broker."""
     entries = await redis.xrange(DEAD_LETTER_STREAM, min=message_id, max=message_id, count=1)
     if not entries:
         raise NotFoundError("dead-letter", message_id)
     _, fields = entries[0]
 
-    # Re-publish to task stream
-    await redis.xadd(TASK_STREAM, fields)
-    # Remove from dead-letter
-    await redis.xdel(DEAD_LETTER_STREAM, message_id)
-
-    # Reset run status back to pending
     if "payload" in fields:
         payload = orjson.loads(fields["payload"])
         run_id = payload.get("run_id")
+
+        from langrove.queue.tasks import handle_run
+        from langrove.settings import Settings
+
+        settings = Settings()
+        await asyncio.to_thread(
+            handle_run.apply_async,
+            kwargs=payload,
+            queue=settings.queue_name,
+        )
+
+        # Remove from dead-letter stream
+        await redis.xdel(DEAD_LETTER_STREAM, message_id)
+
+        # Reset run status back to pending
         if run_id:
             run_repo = RunRepository(db)
             await run_repo.update_status(UUID(run_id), "pending")
