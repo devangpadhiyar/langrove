@@ -76,6 +76,11 @@ def setup_broker(
     """
     broker = RedisBroker(url=redis_url)
 
+    # RedisBroker ships with default TimeLimit and Retries already in its
+    # middleware stack.  Remove them before adding our configured versions so
+    # Dramatiq doesn't warn about duplicate middleware types.
+    broker.middleware = [m for m in broker.middleware if not isinstance(m, (TimeLimit, Retries))]
+
     # Middleware order matters: Retries runs first, then DeadLetterMiddleware,
     # so dead-lettering only happens after Retries has given up.
     broker.add_middleware(AsyncIO())
