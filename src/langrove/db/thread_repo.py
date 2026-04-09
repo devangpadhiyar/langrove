@@ -27,7 +27,9 @@ class ThreadRepository:
 
         # Check if exists
         if thread_id:
-            existing = await self._db.fetch_one("SELECT * FROM threads WHERE thread_id = $1", tid)
+            existing = await self._db.fetch_one(
+                "SELECT * FROM langrove_threads WHERE thread_id = $1", tid
+            )
             if existing:
                 if if_exists == "do_nothing":
                     return self._normalize(existing)
@@ -35,7 +37,7 @@ class ThreadRepository:
 
         row = await self._db.fetch_one(
             """
-            INSERT INTO threads (thread_id, metadata_)
+            INSERT INTO langrove_threads (thread_id, metadata_)
             VALUES ($1, $2)
             RETURNING *
             """,
@@ -46,7 +48,9 @@ class ThreadRepository:
 
     async def get(self, thread_id: UUID) -> dict:
         """Get a thread by ID."""
-        row = await self._db.fetch_one("SELECT * FROM threads WHERE thread_id = $1", thread_id)
+        row = await self._db.fetch_one(
+            "SELECT * FROM langrove_threads WHERE thread_id = $1", thread_id
+        )
         if row is None:
             raise NotFoundError("thread", str(thread_id))
         return self._normalize(row)
@@ -58,7 +62,7 @@ class ThreadRepository:
 
         row = await self._db.fetch_one(
             """
-            UPDATE threads SET metadata_ = $1, updated_at = NOW()
+            UPDATE langrove_threads SET metadata_ = $1, updated_at = NOW()
             WHERE thread_id = $2
             RETURNING *
             """,
@@ -71,7 +75,9 @@ class ThreadRepository:
 
     async def delete(self, thread_id: UUID) -> None:
         """Delete a thread."""
-        result = await self._db.execute("DELETE FROM threads WHERE thread_id = $1", thread_id)
+        result = await self._db.execute(
+            "DELETE FROM langrove_threads WHERE thread_id = $1", thread_id
+        )
         if result == "DELETE 0":
             raise NotFoundError("thread", str(thread_id))
 
@@ -102,7 +108,7 @@ class ThreadRepository:
         args.extend([limit, offset])
 
         rows = await self._db.fetch_all(
-            f"SELECT * FROM threads {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
+            f"SELECT * FROM langrove_threads {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
             *args,
         )
         return [self._normalize(r) for r in rows]
@@ -115,7 +121,7 @@ class ThreadRepository:
     async def set_status(self, thread_id: UUID, status: str) -> None:
         """Update thread status."""
         await self._db.execute(
-            "UPDATE threads SET status = $1, updated_at = NOW() WHERE thread_id = $2",
+            "UPDATE langrove_threads SET status = $1, updated_at = NOW() WHERE thread_id = $2",
             status,
             thread_id,
         )

@@ -31,7 +31,7 @@ class AssistantRepository:
 
         row = await self._db.fetch_one(
             """
-            INSERT INTO assistants (assistant_id, graph_id, name, description, config, metadata_)
+            INSERT INTO langrove_assistants (assistant_id, graph_id, name, description, config, metadata_)
             VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
             RETURNING *
             """,
@@ -47,7 +47,7 @@ class AssistantRepository:
     async def get(self, assistant_id: UUID) -> dict:
         """Get an assistant by ID. Raises NotFoundError if not found."""
         row = await self._db.fetch_one(
-            "SELECT * FROM assistants WHERE assistant_id = $1",
+            "SELECT * FROM langrove_assistants WHERE assistant_id = $1",
             assistant_id,
         )
         if row is None:
@@ -84,7 +84,7 @@ class AssistantRepository:
         args.append(assistant_id)
 
         row = await self._db.fetch_one(
-            f"UPDATE assistants SET {', '.join(sets)} WHERE assistant_id = ${idx} RETURNING *",
+            f"UPDATE langrove_assistants SET {', '.join(sets)} WHERE assistant_id = ${idx} RETURNING *",
             *args,
         )
         if row is None:
@@ -98,7 +98,7 @@ class AssistantRepository:
     async def delete(self, assistant_id: UUID) -> None:
         """Delete an assistant by ID."""
         result = await self._db.execute(
-            "DELETE FROM assistants WHERE assistant_id = $1",
+            "DELETE FROM langrove_assistants WHERE assistant_id = $1",
             assistant_id,
         )
         if result == "DELETE 0":
@@ -139,7 +139,7 @@ class AssistantRepository:
         args.extend([limit, offset])
 
         rows = await self._db.fetch_all(
-            f"SELECT * FROM assistants {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
+            f"SELECT * FROM langrove_assistants {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
             *args,
         )
         return [self._normalize(r) for r in rows]
@@ -150,7 +150,7 @@ class AssistantRepository:
 
         await self._db.execute(
             """
-            INSERT INTO assistant_versions (assistant_id, version, graph_id, config, metadata_)
+            INSERT INTO langrove_assistant_versions (assistant_id, version, graph_id, config, metadata_)
             VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)
             ON CONFLICT (assistant_id, version) DO NOTHING
             """,

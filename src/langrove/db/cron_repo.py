@@ -29,7 +29,7 @@ class CronRepository:
         """Create a new cron job."""
         row = await self._db.fetch_one(
             """
-            INSERT INTO crons (cron_id, assistant_id, thread_id, schedule, payload, metadata_)
+            INSERT INTO langrove_crons (cron_id, assistant_id, thread_id, schedule, payload, metadata_)
             VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
             RETURNING *
             """,
@@ -44,7 +44,7 @@ class CronRepository:
 
     async def get(self, cron_id: UUID) -> dict:
         """Get a cron by ID."""
-        row = await self._db.fetch_one("SELECT * FROM crons WHERE cron_id = $1", cron_id)
+        row = await self._db.fetch_one("SELECT * FROM langrove_crons WHERE cron_id = $1", cron_id)
         if row is None:
             raise NotFoundError("cron", str(cron_id))
         return self._normalize(row)
@@ -75,7 +75,7 @@ class CronRepository:
         args.append(cron_id)
 
         row = await self._db.fetch_one(
-            f"UPDATE crons SET {', '.join(sets)} WHERE cron_id = ${idx} RETURNING *",
+            f"UPDATE langrove_crons SET {', '.join(sets)} WHERE cron_id = ${idx} RETURNING *",
             *args,
         )
         if row is None:
@@ -84,7 +84,7 @@ class CronRepository:
 
     async def delete(self, cron_id: UUID) -> None:
         """Delete a cron."""
-        result = await self._db.execute("DELETE FROM crons WHERE cron_id = $1", cron_id)
+        result = await self._db.execute("DELETE FROM langrove_crons WHERE cron_id = $1", cron_id)
         if result == "DELETE 0":
             raise NotFoundError("cron", str(cron_id))
 
@@ -115,7 +115,7 @@ class CronRepository:
         args.extend([limit, offset])
 
         rows = await self._db.fetch_all(
-            f"SELECT * FROM crons {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
+            f"SELECT * FROM langrove_crons {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
             *args,
         )
         return [self._normalize(r) for r in rows]

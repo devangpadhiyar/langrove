@@ -32,9 +32,55 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
     settings = settings or Settings()
     config = config or load_config(settings.config_path)
 
+    async def _check_migrations(database_url: str) -> None:
+        """Abort startup if unapplied migrations exist."""
+        import asyncio
+        from pathlib import Path
+
+        from alembic.config import Config
+        from alembic.runtime.migration import MigrationContext
+        from alembic.script import ScriptDirectory
+        from sqlalchemy import create_engine
+
+        def _sync_url(url: str) -> str:
+            url = url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+            url = url.replace("postgres+asyncpg://", "postgresql+psycopg://")
+            if url.startswith("postgresql://") or url.startswith("postgres://"):
+                url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+                url = url.replace("postgres://", "postgresql+psycopg://", 1)
+            return url
+
+        alembic_ini = Path(__file__).parent.parent.parent / "alembic.ini"
+        if not alembic_ini.exists():
+            alembic_ini = Path("alembic.ini")
+        if not alembic_ini.exists():
+            return  # can't check — skip (e.g. installed as wheel without alembic.ini)
+
+        migrations_dir = Path(__file__).parent / "migrations"
+        cfg = Config(str(alembic_ini))
+        cfg.set_main_option("script_location", str(migrations_dir))
+
+        def _check() -> list[str]:
+            engine = create_engine(_sync_url(database_url))
+            with engine.connect() as conn:
+                ctx = MigrationContext.configure(conn)
+                current = set(ctx.get_current_heads())
+            script = ScriptDirectory.from_config(cfg)
+            head = set(script.get_heads())
+            return sorted(head - current)
+
+        pending = await asyncio.to_thread(_check)
+        if pending:
+            raise RuntimeError(
+                f"Database schema is out of date (pending revisions: {pending}). "
+                "Run `langrove migrate` before starting the server."
+            )
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Startup
+        await _check_migrations(settings.database_url)
+
         db_pool = DatabasePool(
             settings.database_url,
             min_size=settings.db_pool_min_size,

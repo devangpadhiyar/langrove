@@ -31,7 +31,7 @@ class RunRepository:
         run_id = uuid4()
         row = await self._db.fetch_one(
             """
-            INSERT INTO runs (run_id, thread_id, assistant_id, input, kwargs, metadata_, multitask_strategy)
+            INSERT INTO langrove_runs (run_id, thread_id, assistant_id, input, kwargs, metadata_, multitask_strategy)
             VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7)
             RETURNING *
             """,
@@ -47,7 +47,7 @@ class RunRepository:
 
     async def get(self, run_id: UUID) -> dict:
         """Get a run by ID."""
-        row = await self._db.fetch_one("SELECT * FROM runs WHERE run_id = $1", run_id)
+        row = await self._db.fetch_one("SELECT * FROM langrove_runs WHERE run_id = $1", run_id)
         if row is None:
             raise NotFoundError("run", str(run_id))
         return self._normalize(row)
@@ -58,7 +58,7 @@ class RunRepository:
         """Update run status."""
         if result is not None:
             await self._db.execute(
-                "UPDATE runs SET status = $1, error = $2, result = $3::jsonb, updated_at = NOW() WHERE run_id = $4",
+                "UPDATE langrove_runs SET status = $1, error = $2, result = $3::jsonb, updated_at = NOW() WHERE run_id = $4",
                 status,
                 error,
                 orjson.dumps(result).decode(),
@@ -66,7 +66,7 @@ class RunRepository:
             )
         else:
             await self._db.execute(
-                "UPDATE runs SET status = $1, error = $2, updated_at = NOW() WHERE run_id = $3",
+                "UPDATE langrove_runs SET status = $1, error = $2, updated_at = NOW() WHERE run_id = $3",
                 status,
                 error,
                 run_id,
@@ -74,7 +74,7 @@ class RunRepository:
 
     async def delete(self, run_id: UUID) -> None:
         """Delete a run."""
-        result = await self._db.execute("DELETE FROM runs WHERE run_id = $1", run_id)
+        result = await self._db.execute("DELETE FROM langrove_runs WHERE run_id = $1", run_id)
         if result == "DELETE 0":
             raise NotFoundError("run", str(run_id))
 
@@ -117,7 +117,7 @@ class RunRepository:
         args.extend([limit, offset])
 
         rows = await self._db.fetch_all(
-            f"SELECT * FROM runs {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
+            f"SELECT * FROM langrove_runs {where} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
             *args,
         )
         return [self._normalize(r) for r in rows]
