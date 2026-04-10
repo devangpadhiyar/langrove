@@ -50,9 +50,12 @@ def create_app(settings: Settings | None = None, config: GraphConfig | None = No
                 url = url.replace("postgres://", "postgresql+psycopg://", 1)
             return url
 
+        # Check: 1) source install, 2) current directory, 3) inside langrove package (wheel install)
         alembic_ini = Path(__file__).parent.parent.parent / "alembic.ini"
         if not alembic_ini.exists():
             alembic_ini = Path("alembic.ini")
+        if not alembic_ini.exists():
+            alembic_ini = Path(__file__).parent / "alembic.ini"
         if not alembic_ini.exists():
             return  # can't check — skip (e.g. installed as wheel without alembic.ini)
 

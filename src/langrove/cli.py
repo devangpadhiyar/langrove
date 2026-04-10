@@ -222,10 +222,12 @@ def migrate(config_path: str, revision: str):
     from pathlib import Path
 
     migrations_dir = Path(__file__).parent / "migrations"
+    # Check: 1) source install, 2) current directory, 3) inside langrove package (wheel install)
     alembic_ini = Path(__file__).parent.parent.parent / "alembic.ini"
     if not alembic_ini.exists():
-        # Fallback: look relative to cwd (editable install / dev mode)
         alembic_ini = Path("alembic.ini")
+    if not alembic_ini.exists():
+        alembic_ini = Path(__file__).parent / "alembic.ini"
 
     if not alembic_ini.exists():
         click.echo(

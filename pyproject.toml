@@ -1,6 +1,6 @@
 [project]
 name = "langrove"
-version = "0.2.3"
+version = "0.2.4"
 description = "Open-source, self-hosted drop-in replacement for LangGraph deployment. Agent Protocol compliant."
 readme = "README.md"
 authors = [
@@ -63,8 +63,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/langrove"]
 include = [
-    { path = "alembic.ini" },
-    { path = "alembic" },
+    { path = "alembic.ini", name = "langrove/alembic.ini" },
+    { path = "alembic", name = "langrove/alembic" },
 ]
 
 [tool.pytest.ini_options]
