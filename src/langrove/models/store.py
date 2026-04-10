@@ -38,7 +38,7 @@ class StoreSearchRequest(BaseModel):
 
     namespace_prefix: list[str] | None = None
     filter: dict[str, Any] | None = None
-    limit: int = Field(default=10, ge=1, le=1000)
+    limit: int = Field(default=100, ge=1, le=1000)
     offset: int = Field(default=0, ge=0)
 
 
